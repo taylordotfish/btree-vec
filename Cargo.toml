@@ -1,0 +1,14 @@
+[package]
+name = "btree-vec"
+version = "0.1.0"
+edition = "2018"
+description = "A growable array (vector) implemented using a B-tree"
+documentation = "https://docs.rs/btree-vec"
+readme = "misc/crate-readme.md"
+repository = "https://github.com/taylordotfish/btree-vec"
+license = "GPL-3.0-or-later"
+keywords = ["b-tree", "vec", "vector", "array"]
+categories = ["data-structures", "no-std"]
+
+[dependencies]
+tagged-pointer = "0.2"
