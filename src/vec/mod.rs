@@ -221,7 +221,7 @@ impl<T, const B: usize> BTreeVec<T, B> {
 
     /// Gets an iterator that returns mutable references to each item in the
     /// vector.
-    pub fn iter_mut(&self) -> IterMut<'_, T, B> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T, B> {
         // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with standard
         // borrowing rules, so there are no other existing `ExclusiveRef`s.
         IterMut {
