@@ -1,6 +1,6 @@
 [package]
 name = "btree-vec"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2018"
 description = "A growable array (vector) implemented using a B-tree"
 documentation = "https://docs.rs/btree-vec"

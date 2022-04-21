@@ -67,10 +67,12 @@ impl<T, const B: usize> BTreeVec<T, B> {
 
     /// # Safety
     ///
-    /// * There must be no existing `ExclusiveRef`s that will be used for
-    ///   mutation.
-    /// * If the `ExclusiveRef` returned by this method will be used for
-    ///   mutation, there must be no other existing `ExclusiveRef`s.
+    /// * There must not be any mutable references, including other
+    ///   [`ExclusiveRef`]s, to any data accessible via the returned
+    ///   [`ExclusiveRef`].
+    /// * If this [`ExclusiveRef`] will be used for mutation, there must be no
+    ///   other references, including [`ExclusiveRef`]s, to any data accessible
+    ///   via the returned [`ExclusiveRef`].
     ///
     /// Note that if this `ExclusiveRef` will *not* be used for mutation,
     /// any method that mutates data through the `ExclusiveRef` *must not*
@@ -120,8 +122,8 @@ impl<T, const B: usize> BTreeVec<T, B> {
     pub fn get(&self, index: usize) -> Option<&T> {
         (index < self.size).then(|| {
             // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with
-            // standard borrowing rules, so there are no existing
-            // `ExclusiveRef`s being used for mutation.
+            // standard borrowing rules, so there are no existing mutable
+            // references.
             let (leaf, index) = unsafe { self.leaf_for(index) };
             leaf.into_child(index)
         })
@@ -132,8 +134,7 @@ impl<T, const B: usize> BTreeVec<T, B> {
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         (index < self.size).then(|| {
             // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with
-            // standard borrowing rules, so there are no other existing
-            // `ExclusiveRef`s.
+            // standard borrowing rules, so there are no existing references.
             let (leaf, index) = unsafe { self.leaf_for(index) };
             leaf.into_child_mut(index)
         })
@@ -172,7 +173,7 @@ impl<T, const B: usize> BTreeVec<T, B> {
             ExclusiveLeaf::alloc().into_prefix().as_ptr()
         });
         // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with standard
-        // borrowing rules, so there are no other existing `ExclusiveRef`s.
+        // borrowing rules, so there are no existing references.
         let (leaf, index) = unsafe { self.leaf_for(index) };
         let root = insert(leaf, index, item, self.size);
         self.root = Some(root.as_ptr());
@@ -192,8 +193,7 @@ impl<T, const B: usize> BTreeVec<T, B> {
     pub fn remove(&mut self, index: usize) -> T {
         assert!(index < self.size);
         // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with
-        // standard borrowing rules, so there are no other existing
-        // `ExclusiveRef`s.
+        // standard borrowing rules, so there are no existing references.
         let (leaf, index) = unsafe { self.leaf_for(index) };
         let (root, item) = remove(leaf, index);
         self.root = Some(root.as_ptr());
@@ -210,8 +210,7 @@ impl<T, const B: usize> BTreeVec<T, B> {
     /// Gets an iterator that returns references to each item in the vector.
     pub fn iter(&self) -> Iter<'_, T, B> {
         // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with standard
-        // borrowing rules, so there are no existing `ExclusiveRef`s being used
-        // for mutation.
+        // borrowing rules, so there are no existing mutable references.
         Iter {
             leaf: self.root.map(|_| unsafe { self.leaf_for(0) }.0),
             index: 0,
@@ -223,7 +222,7 @@ impl<T, const B: usize> BTreeVec<T, B> {
     /// vector.
     pub fn iter_mut(&mut self) -> IterMut<'_, T, B> {
         // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with standard
-        // borrowing rules, so there are no other existing `ExclusiveRef`s.
+        // borrowing rules, so there are no existing references.
         IterMut {
             leaf: self.root.map(|_| unsafe { self.leaf_for(0) }.0),
             index: 0,
@@ -255,7 +254,8 @@ impl<T, const B: usize> IndexMut<usize> for BTreeVec<T, B> {
 impl<T, const B: usize> Drop for BTreeVec<T, B> {
     fn drop(&mut self) {
         if let Some(root) = self.root {
-            // SAFETY: No other `ExclusiveRef`s exist.
+            // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with
+            // standard borrowing rules, so there are no existing references.
             unsafe { ExclusiveRef::new(root) }.destroy();
         }
     }
@@ -336,10 +336,13 @@ impl<'a, T, const B: usize> IntoIterator for &'a mut BTreeVec<T, B> {
 
 /// An owning iterator over the items in a [`BTreeVec`].
 pub struct IntoIter<T, const B: usize> {
-    _tree: BTreeVec<T, B>,
+    // Note: the field order is important here -- we need `_tree` to occur
+    // after `leaf` so there are no existing `ExclusiveRef`s when `_tree` gets
+    // dropped (see `BTreeVec::drop`).
     leaf: Option<ExclusiveLeaf<T, B>>,
     length: usize,
     index: usize,
+    _tree: BTreeVec<T, B>,
 }
 
 impl<T, const B: usize> Iterator for IntoIter<T, B> {
@@ -369,7 +372,7 @@ impl<T, const B: usize> IntoIterator for BTreeVec<T, B> {
     fn into_iter(self) -> Self::IntoIter {
         // SAFETY: `BTreeVec` uses `ExclusiveRef`s in accordance with standard
         // borrowing rules, so because we own the `BTreeVec`, there are no
-        // other existing `ExclusiveRef`s.
+        // existing references.
         let leaf = self.root.map(|_| unsafe { self.leaf_for(0) }.0);
         IntoIter {
             index: 0,

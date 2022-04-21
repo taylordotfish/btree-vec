@@ -84,10 +84,13 @@ pub type ExclusivePrefix<T, const B: usize> = ExclusiveRef<Prefix<T, B>>;
 impl<N> ExclusiveRef<N> {
     /// # Safety
     ///
-    /// * There must not be any other [`ExclusiveRef`]s being used for
-    ///   mutation.
-    /// * If this [`ExclusiveRef`] will be used for mutation, there must not be
-    ///   any other [`ExclusiveRef`]s.
+    /// * `ptr` must point to a valid, aligned object of type `N`.
+    /// * There must not be any mutable references, including other
+    ///   [`ExclusiveRef`]s, to any data accessible via the returned
+    ///   [`ExclusiveRef`].
+    /// * If this [`ExclusiveRef`] will be used for mutation, there must be no
+    ///   other references, including [`ExclusiveRef`]s, to any data accessible
+    ///   via the returned [`ExclusiveRef`].
     ///
     /// Note that if this `ExclusiveRef` will *not* be used for mutation,
     /// any method that mutates data through the `ExclusiveRef` *must not*
