@@ -17,7 +17,10 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::*;
+use super::InternalNode;
+use core::marker::PhantomData;
+use core::ptr::NonNull;
+use tagged_pointer::TaggedPtr;
 
 #[repr(align(2))]
 struct Align2(u16);

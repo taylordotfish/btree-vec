@@ -17,11 +17,11 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::BTreeVec;
+use crate::BTreeVec;
 
 #[test]
 fn basic_remove() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..8 {
         vec.push(i);
     }
@@ -37,7 +37,7 @@ fn basic_remove() {
 
 #[test]
 fn medium_remove() {
-    let mut vec = BTreeVec::<u8, 8>::new();
+    let mut vec = BTreeVec::<u8, 8>::create();
     for i in 0..32 {
         vec.push(i);
     }
@@ -52,7 +52,7 @@ fn medium_remove() {
 
 #[test]
 fn large_remove() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..128 {
         vec.push(i);
     }
@@ -67,7 +67,7 @@ fn large_remove() {
 
 #[test]
 fn large_remove_front() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..128 {
         vec.push(i);
     }
@@ -82,7 +82,7 @@ fn large_remove_front() {
 
 #[test]
 fn large_pop() {
-    let mut vec = BTreeVec::<u8, 8>::new();
+    let mut vec = BTreeVec::<u8, 8>::create();
     for i in 0..128 {
         vec.push(i);
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -17,7 +17,8 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::{ExclusiveRef, Node, Prefix};
+use super::{Mutable, Node, NodeRef, Prefix, RefKind, SplitStrategy};
+use core::marker::PhantomData as Pd;
 use core::mem::{self, MaybeUninit};
 use core::ptr::{self, NonNull};
 
@@ -43,7 +44,7 @@ impl<T, const B: usize> Drop for LeafNode<T, B> {
 impl<T, const B: usize> LeafNode<T, B> {
     /// # Safety
     ///
-    /// To be used only by [`ExclusiveRef::alloc`].
+    /// To be used only by [`NodeRef::alloc`].
     pub unsafe fn new() -> Self {
         Self {
             prefix: Prefix::new(true),
@@ -53,22 +54,26 @@ impl<T, const B: usize> LeafNode<T, B> {
         }
     }
 
-    pub fn split(&mut self) -> ExclusiveRef<Self> {
+    pub fn split(
+        &mut self,
+        strategy: SplitStrategy,
+    ) -> NodeRef<Self, Mutable> {
+        let (left, right) = strategy.sizes(B);
         assert!(self.length == B);
-        let mut new = ExclusiveRef::<Self>::alloc();
+        let mut new = NodeRef::<Self, _>::alloc();
         // SAFETY: Guaranteed by this type's invariants (length is always
         // accurate).
         unsafe {
             ptr::copy_nonoverlapping(
-                (self.children.as_ptr() as *const T).wrapping_add(B - B / 2),
+                (self.children.as_ptr() as *const T).wrapping_add(left),
                 new.children.as_mut_ptr() as *mut T,
-                B / 2,
+                right,
             );
         }
         new.next = self.next;
         self.next = Some(new.as_ptr());
-        self.length = B - B / 2;
-        new.length = B / 2;
+        self.length = left;
+        new.length = right;
         new
     }
 
@@ -112,6 +117,7 @@ impl<T, const B: usize> LeafNode<T, B> {
         unsafe { item.assume_init() }
     }
 
+    #[allow(dead_code)]
     pub fn child(&self, i: usize) -> &T {
         assert!(i < self.length);
         // SAFETY: Items at 0..length are always initialized. We can
@@ -180,8 +186,8 @@ unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
         self.simple_remove(i)
     }
 
-    fn split(&mut self) -> ExclusiveRef<Self> {
-        self.split()
+    fn split(&mut self, strategy: SplitStrategy) -> NodeRef<Self, Mutable> {
+        self.split(strategy)
     }
 
     fn merge(&mut self, other: &mut Self) {
@@ -189,26 +195,27 @@ unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
     }
 }
 
-impl<T, const B: usize> ExclusiveRef<LeafNode<T, B>> {
+impl<T, const B: usize, R: RefKind> NodeRef<LeafNode<T, B>, R> {
     pub fn into_child<'a>(self, i: usize) -> &'a T {
         assert!(i < self.length);
-        // SAFETY: Items at 0..length are always initialized. We can
-        // choose any lifetime because this method consumes the `ExclusiveRef`.
+        // SAFETY: Items at 0..length are always initialized.
         unsafe { &*self.children[i].as_ptr() }
-    }
-
-    pub fn into_child_mut<'a>(mut self, i: usize) -> &'a mut T {
-        assert!(i < self.length);
-        // SAFETY: Items at 0..length are always initialized. We can
-        // choose any lifetime because this method consumes the `ExclusiveRef`.
-        unsafe { &mut *self.children[i].as_mut_ptr() }
     }
 
     pub fn into_next(self) -> Result<Self, Self> {
         if let Some(node) = self.next {
-            Ok(Self(node))
+            Ok(Self(node, Pd))
         } else {
             Err(self)
         }
+    }
+}
+
+impl<T, const B: usize> NodeRef<LeafNode<T, B>, Mutable> {
+    pub fn into_child_mut<'a>(mut self, i: usize) -> &'a mut T {
+        assert!(i < self.length);
+        // SAFETY: Items at 0..length are always initialized. We can
+        // choose any lifetime because this method consumes the `NodeRef`.
+        unsafe { &mut *self.children[i].as_mut_ptr() }
     }
 }

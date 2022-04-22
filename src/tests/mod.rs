@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -17,14 +17,15 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::vec::BTreeVec;
+use crate::debug;
+use crate::BTreeVec;
 
 mod insert;
 mod remove;
 
 #[test]
 fn basic_iter() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..8 {
         vec.push(i);
     }
@@ -35,18 +36,20 @@ fn basic_iter() {
 
 #[test]
 fn medium_iter() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..32 {
         vec.push(i);
     }
     for (i, n) in vec.iter().enumerate() {
         assert!(i == *n as usize);
     }
+    let mut state = debug::State::new();
+    println!("{}", vec.debug(&mut state));
 }
 
 #[test]
 fn large_iter() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..128 {
         vec.push(i);
     }
@@ -59,25 +62,38 @@ fn large_iter() {
     for (i, n) in vec.iter().enumerate() {
         assert!(i == *n as usize - 16);
     }
-    vec.debug();
 }
 
 #[test]
 fn small_b() {
-    let mut vec = BTreeVec::<u8, 4>::new();
+    let mut vec = BTreeVec::<u8, 4>::create();
     for i in 0..32 {
         vec.push(i);
     }
     for _ in 0..16 {
         vec.pop();
     }
-    for (i, n) in vec.iter().enumerate() {
-        assert!(i == *n as usize);
+    for (a, b) in (0..16).zip(&vec) {
+        assert!(a == *b);
+    }
+}
+
+#[test]
+fn smallest_b() {
+    let mut vec = BTreeVec::<u8, 4>::create();
+    for i in 0..24 {
+        vec.push(i);
+    }
+    for _ in 0..12 {
+        vec.remove(7);
+    }
+    for (a, b) in (0..7).chain(19..24).zip(&vec) {
+        assert!(a == *b);
     }
 }
 
 #[test]
 #[should_panic]
 fn too_small_b() {
-    BTreeVec::<u8, 3>::new();
+    BTreeVec::<u8, 2>::create();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -17,8 +17,9 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::{ExclusiveInternal, ExclusivePrefix, ExclusiveRef};
-use super::{Node, Prefix, PrefixPtr};
+use super::{InternalRef, Mutable, NodeRef, PrefixRef, RefKind};
+use super::{Node, Prefix, PrefixPtr, SplitStrategy};
+use core::marker::PhantomData as Pd;
 use core::mem;
 use core::ptr::NonNull;
 
@@ -33,7 +34,7 @@ pub struct InternalNode<T, const B: usize> {
 impl<T, const B: usize> Drop for InternalNode<T, B> {
     fn drop(&mut self) {
         for child in &mut self.children[..self.length] {
-            let mut child = ExclusiveRef(child.take().unwrap());
+            let mut child = NodeRef(child.take().unwrap(), Pd);
             child.parent.set(None);
             child.destroy();
         }
@@ -43,7 +44,7 @@ impl<T, const B: usize> Drop for InternalNode<T, B> {
 impl<T, const B: usize> InternalNode<T, B> {
     /// # Safety
     ///
-    /// To be used only by [`ExclusiveRef::alloc`].
+    /// To be used only by [`NodeRef::alloc`].
     pub unsafe fn new() -> Self {
         Self {
             prefix: Prefix::new(false),
@@ -53,15 +54,19 @@ impl<T, const B: usize> InternalNode<T, B> {
         }
     }
 
-    pub fn split(&mut self) -> ExclusiveRef<Self> {
+    pub fn split(
+        &mut self,
+        strategy: SplitStrategy,
+    ) -> NodeRef<Self, Mutable> {
+        let (left, right) = strategy.sizes(B);
         assert!(self.length == B);
-        let mut new = ExclusiveInternal::alloc();
+        let mut new = InternalRef::alloc();
         let ptr = new.0;
-        new.sizes[..B / 2].copy_from_slice(&self.sizes[B - B / 2..]);
-        self.children[B - B / 2..]
+        new.sizes[..right].copy_from_slice(&self.sizes[left..]);
+        self.children[left..]
             .iter_mut()
             .map(|c| c.take().unwrap())
-            .zip(&mut new.children[..B / 2])
+            .zip(&mut new.children[..right])
             .enumerate()
             .for_each(|(i, (mut old_child, new_child))| {
                 // SAFETY: We have the only reference to `old_child`, and this
@@ -71,8 +76,8 @@ impl<T, const B: usize> InternalNode<T, B> {
                 prefix.index = i;
                 *new_child = Some(old_child);
             });
-        self.length = B - B / 2;
-        new.length = B / 2;
+        self.length = left;
+        new.length = right;
         new
     }
 
@@ -103,7 +108,7 @@ impl<T, const B: usize> InternalNode<T, B> {
     pub fn simple_insert(
         &mut self,
         i: usize,
-        mut item: (ExclusivePrefix<T, B>, usize),
+        mut item: (PrefixRef<T, B, Mutable>, usize),
     ) {
         let length = self.length;
         assert!(length < B);
@@ -123,7 +128,7 @@ impl<T, const B: usize> InternalNode<T, B> {
     pub fn simple_remove(
         &mut self,
         i: usize,
-    ) -> (ExclusivePrefix<T, B>, usize) {
+    ) -> (PrefixRef<T, B, Mutable>, usize) {
         let length = self.length;
         assert!(length > 0);
         self.children[i..length].rotate_left(1);
@@ -131,8 +136,7 @@ impl<T, const B: usize> InternalNode<T, B> {
         for i in i..(length - 1) {
             self.child_mut(i).0.index = i;
         }
-        let mut child =
-            ExclusiveRef(self.children[length - 1].take().unwrap());
+        let mut child = NodeRef(self.children[length - 1].take().unwrap(), Pd);
         let size = mem::replace(&mut self.sizes[length - 1], 0);
         child.parent.set(None);
         child.index = 0;
@@ -140,18 +144,33 @@ impl<T, const B: usize> InternalNode<T, B> {
         (child, size)
     }
 
+    /// This method always returns pointers to initialized children
+    /// (or `None`).
+    fn child_ptr(&self, i: usize) -> Option<PrefixPtr<T, B>> {
+        // Children at 0..self.length are always initialized.
+        self.children[..self.length].get(i).copied().flatten()
+    }
+
+    pub fn try_child(&self, i: usize) -> Option<(&Prefix<T, B>, usize)> {
+        // SAFETY: `Self::child_ptr` returns initialized children, and we
+        // hand out references only according to standard borrow rules, so
+        // we can dereference.
+        self.child_ptr(i).map(|p| (unsafe { p.as_ref() }, self.sizes[i]))
+    }
+
     pub fn try_child_mut(
         &mut self,
         i: usize,
     ) -> Option<(&mut Prefix<T, B>, &mut usize)> {
-        // SAFETY: Children at 0..self.length are always initialized, and we
+        // SAFETY: `Self::child_ptr` returns initialized children, and we
         // hand out references only according to standard borrow rules, so
         // we can dereference.
-        self.children[..self.length]
-            .get(i)
-            .copied()
-            .flatten()
+        self.child_ptr(i)
             .map(move |mut p| (unsafe { p.as_mut() }, &mut self.sizes[i]))
+    }
+
+    pub fn child(&self, i: usize) -> (&Prefix<T, B>, usize) {
+        self.try_child(i).unwrap()
     }
 
     pub fn child_mut(&mut self, i: usize) -> (&mut Prefix<T, B>, &mut usize) {
@@ -170,7 +189,7 @@ impl<T, const B: usize> InternalNode<T, B> {
 // SAFETY: `Node` may be implemented by `InternalNode`.
 unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
     type Prefix = Prefix<T, B>;
-    type Child = (ExclusivePrefix<T, B>, usize);
+    type Child = (PrefixRef<T, B, Mutable>, usize);
 
     unsafe fn new() -> Self {
         // SAFETY: Checked by caller.
@@ -209,8 +228,8 @@ unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
         self.simple_remove(i)
     }
 
-    fn split(&mut self) -> ExclusiveRef<Self> {
-        self.split()
+    fn split(&mut self, strategy: SplitStrategy) -> NodeRef<Self, Mutable> {
+        self.split(strategy)
     }
 
     fn merge(&mut self, other: &mut Self) {
@@ -218,8 +237,14 @@ unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
     }
 }
 
-impl<T, const B: usize> ExclusiveRef<InternalNode<T, B>> {
-    pub fn into_child(mut self, i: usize) -> ExclusivePrefix<T, B> {
-        ExclusiveRef(NonNull::from(self.child_mut(i).0))
+impl<T, const B: usize, R: RefKind> NodeRef<InternalNode<T, B>, R> {
+    pub fn into_child(self, i: usize) -> PrefixRef<T, B, R> {
+        R::into_child(self, i)
+    }
+}
+
+impl<T, const B: usize> NodeRef<InternalNode<T, B>> {
+    pub fn child_ref(&self, i: usize) -> PrefixRef<T, B> {
+        NodeRef(NonNull::from(self.child(i).0), Pd)
     }
 }

@@ -2,9 +2,9 @@ btree-vec
 =========
 
 This crate provides a growable array (vector) implemented using a B-tree
-(more specifically, a B+ tree). It provides O(log n) random accesses,
-insertions, and removals, as well as O(n) iteration. The branching factor
-is also customizable.
+(more specifically, a B+ tree). It provides non-amortized O(log n) random
+accesses, insertions, and removals, as well as O(n) iteration. The
+branching factor is also customizable.
 
 The design is similar to [unsorted counted B-trees][cb] as described by
 Simon Tatham.

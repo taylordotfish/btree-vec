@@ -17,12 +17,12 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::node::{ExclusiveLeaf, ExclusivePrefix, ExclusiveRef};
 use super::node::{InternalNode, Node, Prefix};
+use super::node::{LeafRef, Mutable, NodeRef, PrefixRef};
 use core::mem;
 
 struct Removal<N> {
-    node: ExclusiveRef<N>,
+    node: NodeRef<N, Mutable>,
     kind: RemovalKind,
 }
 
@@ -44,7 +44,7 @@ enum RemovalKind {
 
 enum RemovalResult<N, T, const B: usize> {
     Removal(Removal<InternalNode<T, B>>),
-    Done(ExclusiveRef<N>),
+    Done(NodeRef<N, Mutable>),
 }
 
 fn handle_removal<N, T, const B: usize>(
@@ -106,7 +106,7 @@ where
 }
 
 fn remove_once<N, T, const B: usize>(
-    mut node: ExclusiveRef<N>,
+    mut node: NodeRef<N, Mutable>,
     i: usize,
 ) -> (Removal<N>, N::Child)
 where
@@ -123,7 +123,7 @@ where
         )
     };
 
-    let (mut left, mid, mut right) = node.siblings();
+    let (mut left, mid, mut right) = node.siblings_mut();
     let has_sibling = left.is_some() || right.is_some();
     if mid.length() >= B / 2 || !has_sibling {
         return make_result(
@@ -188,9 +188,9 @@ where
 }
 
 pub fn remove<T, const B: usize>(
-    node: ExclusiveLeaf<T, B>,
+    node: LeafRef<T, B, Mutable>,
     i: usize,
-) -> (ExclusivePrefix<T, B>, T) {
+) -> (PrefixRef<T, B, Mutable>, T) {
     let (removal, item) = remove_once(node, i);
     let result = handle_removal(removal);
     let mut removal = match result {

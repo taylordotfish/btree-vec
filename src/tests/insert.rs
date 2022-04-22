@@ -17,11 +17,11 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::BTreeVec;
+use crate::BTreeVec;
 
 #[test]
 fn basic_push() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..8 {
         vec.push(i);
     }
@@ -33,7 +33,7 @@ fn basic_push() {
 
 #[test]
 fn medium_push() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..32 {
         vec.push(i);
     }
@@ -45,7 +45,7 @@ fn medium_push() {
 
 #[test]
 fn large_push() {
-    let mut vec = BTreeVec::<u8, 8>::new();
+    let mut vec = BTreeVec::<u8, 8>::create();
     for i in 0..128 {
         vec.push(i);
     }
@@ -57,7 +57,7 @@ fn large_push() {
 
 #[test]
 fn basic_insert_front() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..8 {
         vec.insert(0, i);
     }
@@ -69,7 +69,7 @@ fn basic_insert_front() {
 
 #[test]
 fn medium_insert_front() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..32 {
         vec.insert(0, i);
     }
@@ -81,7 +81,7 @@ fn medium_insert_front() {
 
 #[test]
 fn large_insert_front() {
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..128 {
         vec.insert(0, i);
     }
@@ -94,7 +94,7 @@ fn large_insert_front() {
 #[test]
 fn basic_insert_middle() {
     let mut v = Vec::new();
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..4 {
         vec.push(i);
         v.push(i);
@@ -112,7 +112,7 @@ fn basic_insert_middle() {
 #[test]
 fn medium_insert_middle() {
     let mut v = Vec::new();
-    let mut vec = BTreeVec::<u8, 8>::new();
+    let mut vec = BTreeVec::<u8, 8>::create();
     for i in 0..16 {
         vec.push(i);
         v.push(i);
@@ -130,7 +130,7 @@ fn medium_insert_middle() {
 #[test]
 fn large_insert_middle() {
     let mut v = Vec::new();
-    let mut vec = BTreeVec::<u8, 7>::new();
+    let mut vec = BTreeVec::<u8, 7>::create();
     for i in 0..64 {
         vec.push(i);
         v.push(i);

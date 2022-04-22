@@ -17,17 +17,17 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::node::{ExclusiveInternal, ExclusiveLeaf, ExclusivePrefix};
-use super::node::{ExclusiveRef, InternalNode, Node, Prefix};
+use super::node::{InternalNode, Node, NodeRef, Prefix, SplitStrategy};
+use super::node::{InternalRef, LeafRef, Mutable, PrefixRef};
 
 struct Insertion<N> {
-    node: ExclusiveRef<N>,
-    new: Option<ExclusiveRef<N>>,
+    node: NodeRef<N, Mutable>,
+    new: Option<NodeRef<N, Mutable>>,
 }
 
 enum InsertionResult<T, const B: usize> {
     Insertion(Insertion<InternalNode<T, B>>),
-    Done(ExclusivePrefix<T, B>),
+    Done(PrefixRef<T, B, Mutable>),
 }
 
 fn handle_insertion<N, T, const B: usize>(
@@ -49,7 +49,7 @@ where
             if new.is_none() {
                 return InsertionResult::Done(root.into_prefix());
             }
-            let mut parent = ExclusiveInternal::alloc();
+            let mut parent = InternalRef::alloc();
             parent.simple_insert(0, (root.into_prefix(), root_size));
             parent
         }
@@ -76,31 +76,33 @@ where
 }
 
 fn insert_once<N, T, const B: usize>(
-    node: &mut ExclusiveRef<N>,
+    node: &mut NodeRef<N, Mutable>,
     i: usize,
     item: N::Child,
-) -> Option<ExclusiveRef<N>>
+) -> Option<NodeRef<N, Mutable>>
 where
     N: Node<Prefix = Prefix<T, B>>,
 {
     let mut split = None;
     if node.length() == B {
-        let new = split.insert(node.split());
         if let Some(i) = i.checked_sub(B - B / 2) {
-            new.simple_insert(i, item);
+            split
+                .insert(node.split(SplitStrategy::LargerLeft))
+                .simple_insert(i, item);
             return split;
         }
+        split = Some(node.split(SplitStrategy::LargerRight));
     }
     node.simple_insert(i, item);
     split
 }
 
 pub fn insert<T, const B: usize>(
-    mut node: ExclusiveLeaf<T, B>,
+    mut node: LeafRef<T, B, Mutable>,
     i: usize,
     item: T,
     root_size: usize,
-) -> ExclusivePrefix<T, B> {
+) -> PrefixRef<T, B, Mutable> {
     let mut result = handle_insertion(
         Insertion {
             new: insert_once(&mut node, i, item),

@@ -1,7 +1,8 @@
 [package]
 name = "btree-vec"
-version = "0.1.2"
-edition = "2018"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.59"
 description = "A growable array (vector) implemented using a B-tree"
 documentation = "https://docs.rs/btree-vec"
 readme = "misc/crate-readme.md"
