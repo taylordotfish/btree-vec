@@ -17,7 +17,7 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::InternalNode;
+use super::{InternalNode, NodeKind};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 use tagged_pointer::TaggedPtr;
@@ -25,7 +25,7 @@ use tagged_pointer::TaggedPtr;
 #[repr(align(2))]
 struct Align2(u16);
 
-pub struct ParentPtr<T, const B: usize>(
+pub(super) struct ParentPtr<T, const B: usize>(
     TaggedPtr<Align2, 1>,
     PhantomData<NonNull<InternalNode<T, B>>>,
 );
@@ -44,8 +44,8 @@ impl<T, const B: usize> ParentPtr<T, B> {
         NonNull::from(&SENTINEL)
     }
 
-    pub fn new(is_leaf: bool) -> Self {
-        Self(TaggedPtr::new(Self::sentinel(), is_leaf as usize), PhantomData)
+    pub fn new(kind: NodeKind) -> Self {
+        Self(TaggedPtr::new(Self::sentinel(), kind as usize), PhantomData)
     }
 
     pub fn get(&self) -> Option<NonNull<InternalNode<T, B>>> {
@@ -60,7 +60,7 @@ impl<T, const B: usize> ParentPtr<T, B> {
         );
     }
 
-    pub fn is_leaf(&self) -> bool {
-        self.0.tag() != 0
+    pub fn kind(&self) -> NodeKind {
+        NodeKind::from_usize(self.0.tag())
     }
 }

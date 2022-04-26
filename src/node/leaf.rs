@@ -17,7 +17,8 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::{Mutable, Node, NodeRef, Prefix, RefKind, SplitStrategy};
+use super::{Mutable, NodeRef, Prefix, RefKind};
+use super::{Node, NodeKind, SplitStrategy};
 use core::marker::PhantomData as Pd;
 use core::mem::{self, MaybeUninit};
 use core::ptr::{self, NonNull};
@@ -47,7 +48,7 @@ impl<T, const B: usize> LeafNode<T, B> {
     /// To be used only by [`NodeRef::alloc`].
     pub unsafe fn new() -> Self {
         Self {
-            prefix: Prefix::new(true),
+            prefix: Prefix::new(NodeKind::Leaf),
             length: 0,
             children: [(); B].map(|_| MaybeUninit::uninit()),
             next: None,

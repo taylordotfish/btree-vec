@@ -18,7 +18,7 @@
  */
 
 use super::{InternalRef, Mutable, NodeRef, PrefixRef, RefKind};
-use super::{Node, Prefix, PrefixPtr, SplitStrategy};
+use super::{Node, NodeKind, Prefix, PrefixPtr, SplitStrategy};
 use core::marker::PhantomData as Pd;
 use core::mem;
 use core::ptr::NonNull;
@@ -47,7 +47,7 @@ impl<T, const B: usize> InternalNode<T, B> {
     /// To be used only by [`NodeRef::alloc`].
     pub unsafe fn new() -> Self {
         Self {
-            prefix: Prefix::new(false),
+            prefix: Prefix::new(NodeKind::Internal),
             length: 0,
             children: [(); B].map(|_| None),
             sizes: [0; B],

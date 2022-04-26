@@ -35,6 +35,19 @@ use parent_ptr::ParentPtr;
 pub use ref_kind::{Immutable, Mutable, RefKind};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum NodeKind {
+    Internal = 0,
+    Leaf = 1,
+}
+
+impl NodeKind {
+    pub fn from_usize(n: usize) -> Self {
+        [Self::Internal, Self::Leaf][n]
+    }
+}
+
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum SplitStrategy {
     LargerLeft,
     LargerRight,
@@ -85,9 +98,9 @@ pub struct Prefix<T, const B: usize> {
 pub type PrefixPtr<T, const B: usize> = NonNull<Prefix<T, B>>;
 
 impl<T, const B: usize> Prefix<T, B> {
-    fn new(is_leaf: bool) -> Self {
+    fn new(kind: NodeKind) -> Self {
         Self {
-            parent: ParentPtr::new(is_leaf),
+            parent: ParentPtr::new(kind),
             index: 0,
             phantom: PhantomData,
         }
@@ -154,10 +167,11 @@ pub enum PrefixCast<T, const B: usize, R> {
 
 impl<T, const B: usize, R: RefKind> NodeRef<Prefix<T, B>, R> {
     pub fn cast(self) -> PrefixCast<T, B, R> {
-        if self.parent.is_leaf() {
-            PrefixCast::Leaf(NodeRef(self.0.cast(), Pd))
-        } else {
-            PrefixCast::Internal(NodeRef(self.0.cast(), Pd))
+        match self.parent.kind() {
+            NodeKind::Leaf => PrefixCast::Leaf(NodeRef(self.0.cast(), Pd)),
+            NodeKind::Internal => {
+                PrefixCast::Internal(NodeRef(self.0.cast(), Pd))
+            }
         }
     }
 }
