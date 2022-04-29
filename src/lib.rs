@@ -97,11 +97,11 @@ pub struct BTreeVec<T, const B: usize = 12> {
 }
 
 // SAFETY: `BTreeVec` owns its data, so it can be sent to another thread.
-unsafe impl<T, const B: usize> Send for BTreeVec<T, B> {}
+unsafe impl<T: Send, const B: usize> Send for BTreeVec<T, B> {}
 
 // SAFETY: `BTreeVec` owns its data and provides access to it only through
 // standard borrows.
-unsafe impl<T, const B: usize> Sync for BTreeVec<T, B> {}
+unsafe impl<T: Sync, const B: usize> Sync for BTreeVec<T, B> {}
 
 fn leaf_for<T, const B: usize, R: RefKind>(
     mut root: PrefixRef<T, B, R>,
