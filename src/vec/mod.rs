@@ -48,11 +48,11 @@ pub struct BTreeVec<T, const B: usize> {
 }
 
 // SAFETY: `BTreeVec` owns its data, so it can be sent to another thread.
-unsafe impl<T, const B: usize> Send for BTreeVec<T, B> {}
+unsafe impl<T: Send, const B: usize> Send for BTreeVec<T, B> {}
 
 // SAFETY: `BTreeVec` owns its data and provides access to it only through
 // standard borrows.
-unsafe impl<T, const B: usize> Sync for BTreeVec<T, B> {}
+unsafe impl<T: Sync, const B: usize> Sync for BTreeVec<T, B> {}
 
 impl<T, const B: usize> BTreeVec<T, B> {
     /// Creates a new [`BTreeVec`].
