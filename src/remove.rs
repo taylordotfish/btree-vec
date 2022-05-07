@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -28,15 +28,21 @@ struct Removal<N> {
 
 #[derive(Debug)]
 enum RemovalKind {
+    /// `src` was merged with `dest`. `src` and `dest` are the indices of two
+    /// nodes within the same parent.
     Merged {
         src: usize,
         dest: usize,
     },
+    /// An item in `src` was moved to `dest`. `src` and `dest` are the indices
+    /// of two nodes within the same parent.
     Moved {
         src: usize,
         dest: usize,
         size: usize,
     },
+    /// Removal doesn't need to be propagated anymore -- the item was removed
+    /// from a node with more than the minimum number of children.
     Absorbed {
         index: usize,
     },
@@ -61,9 +67,9 @@ where
         } => {
             let mut parent = node.into_parent().ok().unwrap();
             let size = mem::replace(parent.child_mut(src).1, 0);
-            let dest = parent.child_mut(dest);
-            *dest.1 += size;
-            *dest.1 -= 1;
+            let (_, dest_size) = parent.child_mut(dest);
+            *dest_size += size;
+            *dest_size -= 1;
             (parent, Some(src))
         }
         RemovalKind::Moved {
@@ -73,21 +79,20 @@ where
         } => {
             let mut parent = node.into_parent().ok().unwrap();
             *parent.child_mut(src).1 -= size;
-            let dest = parent.child_mut(dest);
-            *dest.1 += size;
-            *dest.1 -= 1;
+            let (_, dest_size) = parent.child_mut(dest);
+            *dest_size += size;
+            *dest_size -= 1;
             (parent, None)
         }
         RemovalKind::Absorbed {
             index,
         } => match node.into_parent() {
             Ok(mut parent) => {
-                *parent.child_mut(index).1 -= 1;
+                let (_, size) = parent.child_mut(index);
+                *size -= 1;
                 (parent, None)
             }
-            Err(node) => {
-                return RemovalResult::Done(node);
-            }
+            Err(node) => return RemovalResult::Done(node),
         },
     };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -22,6 +22,9 @@ use super::node::{InternalRef, LeafRef, Mutable, PrefixRef};
 
 struct Insertion<N> {
     node: NodeRef<N, Mutable>,
+    /// The new node created as a result of splitting `node` (in response to
+    /// an attempt to insert into a full node), or [`None`] if `node` wasn't
+    /// split.
     new: Option<NodeRef<N, Mutable>>,
 }
 
@@ -49,16 +52,17 @@ where
             if new.is_none() {
                 return InsertionResult::Done(root.into_prefix());
             }
+            // New root
             let mut parent = InternalRef::alloc();
             parent.simple_insert(0, (root.into_prefix(), root_size));
             parent
         }
     };
 
-    let child = parent.child_mut(index);
-    *child.1 += 1;
+    let (_, child_size) = parent.child_mut(index);
+    *child_size += 1;
     let (new, new_size) = if let Some(new @ (_, size)) = new {
-        *child.1 -= size;
+        *child_size -= size;
         new
     } else {
         return InsertionResult::Insertion(Insertion {
@@ -75,6 +79,8 @@ where
     })
 }
 
+/// If `node` is full, splits `node` and returns the new node. Otherwise,
+/// returns [`None`].
 fn insert_once<N, T, const B: usize>(
     node: &mut NodeRef<N, Mutable>,
     i: usize,

@@ -151,6 +151,7 @@ impl<T, const B: usize> InternalNode<T, B> {
         self.children[..self.length].get(i).copied().flatten()
     }
 
+    /// Returns `(child, index)`, or [`None`] if there's no child at `i`.
     pub fn try_child(&self, i: usize) -> Option<(&Prefix<T, B>, usize)> {
         // SAFETY: `Self::child_ptr` returns initialized children, and we
         // hand out references only according to standard borrow rules, so
@@ -158,6 +159,7 @@ impl<T, const B: usize> InternalNode<T, B> {
         self.child_ptr(i).map(|p| (unsafe { p.as_ref() }, self.sizes[i]))
     }
 
+    /// Returns `(child, index)`, or [`None`] if there's no child at `i`.
     pub fn try_child_mut(
         &mut self,
         i: usize,
@@ -169,10 +171,12 @@ impl<T, const B: usize> InternalNode<T, B> {
             .map(move |mut p| (unsafe { p.as_mut() }, &mut self.sizes[i]))
     }
 
+    /// Returns `(child, index)`.
     pub fn child(&self, i: usize) -> (&Prefix<T, B>, usize) {
         self.try_child(i).unwrap()
     }
 
+    /// Returns `(child, index)`.
     pub fn child_mut(&mut self, i: usize) -> (&mut Prefix<T, B>, &mut usize) {
         self.try_child_mut(i).unwrap()
     }
