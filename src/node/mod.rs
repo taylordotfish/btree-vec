@@ -218,6 +218,16 @@ where
     }
 }
 
+impl<N, T, const B: usize> NodeRef<N>
+where
+    N: Node<Prefix = Prefix<T, B>>,
+{
+    #[allow(dead_code)]
+    pub fn parent_ref(&self) -> Option<InternalRef<T, B>> {
+        self.prefix().parent.get().map(|p| NodeRef(p, Pd))
+    }
+}
+
 impl<N, T, const B: usize> NodeRef<N, Mutable>
 where
     N: Node<Prefix = Prefix<T, B>>,
@@ -243,16 +253,6 @@ where
                 .map(|p| unsafe { NonNull::from(p.0).cast().as_mut() })
         });
         (left, self, right)
-    }
-}
-
-impl<N, T, const B: usize> NodeRef<N>
-where
-    N: Node<Prefix = Prefix<T, B>>,
-{
-    #[allow(dead_code)]
-    pub fn parent_ref(&self) -> Option<InternalRef<T, B>> {
-        self.prefix().parent.get().map(|p| NodeRef(p, Pd))
     }
 }
 

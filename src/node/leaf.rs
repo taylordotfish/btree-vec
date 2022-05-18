@@ -118,7 +118,6 @@ impl<T, const B: usize> LeafNode<T, B> {
         unsafe { item.assume_init() }
     }
 
-    #[allow(dead_code)]
     pub fn child(&self, i: usize) -> &T {
         assert!(i < self.length);
         // SAFETY: Items at 0..length are always initialized. We can
@@ -198,9 +197,14 @@ unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
 
 impl<T, const B: usize, R: RefKind> NodeRef<LeafNode<T, B>, R> {
     pub fn into_child<'a>(self, i: usize) -> &'a T {
-        assert!(i < self.length);
-        // SAFETY: Items at 0..length are always initialized.
-        unsafe { &*self.children[i].as_ptr() }
+        // SAFETY: The underlying node's life is not tied to this `NodeRef`'s
+        // life, so we can return a reference to data in the node with any
+        // lifetime. In order for the underlying node to be dropped, a mutable
+        // `NodeRef` would have to be created (one cannot exist right now
+        // because `self` is an immutable `NodeRef`), which is an unsafe
+        // operation that requires the caller to ensure that no references to
+        // node data (such as those returned by this method) exist.
+        unsafe { &*(self.child(i) as *const _) }
     }
 
     pub fn into_next(self) -> Result<Self, Self> {
@@ -214,9 +218,14 @@ impl<T, const B: usize, R: RefKind> NodeRef<LeafNode<T, B>, R> {
 
 impl<T, const B: usize> NodeRef<LeafNode<T, B>, Mutable> {
     pub fn into_child_mut<'a>(mut self, i: usize) -> &'a mut T {
-        assert!(i < self.length);
-        // SAFETY: Items at 0..length are always initialized. We can
-        // choose any lifetime because this method consumes the `NodeRef`.
-        unsafe { &mut *self.children[i].as_mut_ptr() }
+        // SAFETY: The underlying node's life is not tied to this `NodeRef`'s
+        // life, so we can return a reference to data in the node with any
+        // lifetime. In order for the underlying node to be dropped, a mutable
+        // `NodeRef` would have to be created (one cannot exist right now
+        // because `self` is already the one allowed mutable `NodeRef`), which
+        // is an unsafe operation that requires the caller to ensure that no
+        // references to node data (such as those returned by this method)
+        // exist.
+        unsafe { &mut *(self.child_mut(i) as *mut _) }
     }
 }
