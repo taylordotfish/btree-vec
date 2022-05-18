@@ -19,6 +19,10 @@
 
 use crate::debug;
 use crate::BTreeVec;
+use core::fmt::Debug;
+use std::fs::File;
+use std::io::{self, Write};
+use std::process::Command;
 
 mod insert;
 mod remove;
@@ -96,4 +100,21 @@ fn smallest_b() {
 #[should_panic]
 fn too_small_b() {
     BTreeVec::<u8, 2>::create();
+}
+
+#[allow(dead_code)]
+fn make_graph<T: Debug, const B: usize>(
+    vec: &BTreeVec<T, B>,
+    state: &mut debug::State,
+) -> io::Result<()> {
+    let mut file = File::create("graph.dot")?;
+    write!(file, "{}", vec.debug(state))?;
+    file.sync_all()?;
+    drop(file);
+    Command::new("dot")
+        .arg("-Tpng")
+        .arg("-ograph.png")
+        .arg("graph.dot")
+        .status()?;
+    Ok(())
 }
