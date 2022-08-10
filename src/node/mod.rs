@@ -41,9 +41,7 @@ enum NodeKind {
 }
 
 impl NodeKind {
-    pub fn from_usize(n: usize) -> Self {
-        [Self::Internal, Self::Leaf][n]
-    }
+    pub const VARIANTS: [Self; 2] = [Self::Internal, Self::Leaf];
 }
 
 #[non_exhaustive]

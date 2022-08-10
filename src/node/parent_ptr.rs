@@ -61,6 +61,6 @@ impl<T, const B: usize> ParentPtr<T, B> {
     }
 
     pub fn kind(&self) -> NodeKind {
-        NodeKind::from_usize(self.0.tag())
+        NodeKind::VARIANTS[self.0.tag()]
     }
 }
