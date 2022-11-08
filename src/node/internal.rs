@@ -17,18 +17,17 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::{InternalRef, Mutable, NodeRef, PrefixRef, RefKind};
+use super::{InternalRef, Mutable, NodeRef, PrefixRef};
 use super::{Node, NodeKind, Prefix, PrefixPtr, SplitStrategy};
 use core::marker::PhantomData as Pd;
 use core::mem;
-use core::ptr::NonNull;
 
 #[repr(C, align(2))]
 pub struct InternalNode<T, const B: usize> {
     prefix: Prefix<T, B>,
     length: usize,
     children: [Option<PrefixPtr<T, B>>; B],
-    sizes: [usize; B],
+    pub sizes: [usize; B],
 }
 
 impl<T, const B: usize> Drop for InternalNode<T, B> {
@@ -85,7 +84,7 @@ impl<T, const B: usize> InternalNode<T, B> {
         let length = self.length;
         assert!(length <= B / 2);
         assert!(other.length <= B / 2);
-        let ptr = NonNull::from(&mut *self);
+        let parent = self.child(0).parent;
         self.sizes[length..][..other.length]
             .copy_from_slice(&other.sizes[..other.length]);
         other.children[..other.length]
@@ -97,7 +96,7 @@ impl<T, const B: usize> InternalNode<T, B> {
                 // SAFETY: We have the only reference to `other_child`, and
                 // this type's invariants guarantee its validity.
                 let prefix = unsafe { other_child.as_mut() };
-                prefix.parent.set(Some(ptr));
+                prefix.parent = parent;
                 prefix.index = length + i;
                 *self_child = Some(other_child);
             });
@@ -106,22 +105,22 @@ impl<T, const B: usize> InternalNode<T, B> {
     }
 
     pub fn simple_insert(
-        &mut self,
+        this: &mut NodeRef<Self, Mutable>,
         i: usize,
         mut item: (PrefixRef<T, B, Mutable>, usize),
     ) {
-        let length = self.length;
+        let length = this.length;
         assert!(length < B);
-        let ptr = NonNull::from(&mut *self);
+        let ptr = this.0;
         item.0.index = i;
         item.0.parent.set(Some(ptr));
-        self.children[i..length + 1].rotate_right(1);
-        self.sizes[i..length + 1].rotate_right(1);
-        self.children[i] = Some(item.0.0);
-        self.sizes[i] = item.1;
-        self.length += 1;
+        this.children[i..length + 1].rotate_right(1);
+        this.sizes[i..length + 1].rotate_right(1);
+        this.children[i] = Some(item.0.0);
+        this.sizes[i] = item.1;
+        this.length += 1;
         for i in (i + 1)..=length {
-            self.child_mut(i).0.index = i;
+            this.child_mut(i).index = i;
         }
     }
 
@@ -134,7 +133,7 @@ impl<T, const B: usize> InternalNode<T, B> {
         self.children[i..length].rotate_left(1);
         self.sizes[i..length].rotate_left(1);
         for i in i..(length - 1) {
-            self.child_mut(i).0.index = i;
+            self.child_mut(i).index = i;
         }
         let mut child = NodeRef(self.children[length - 1].take().unwrap(), Pd);
         let size = mem::replace(&mut self.sizes[length - 1], 0);
@@ -144,49 +143,27 @@ impl<T, const B: usize> InternalNode<T, B> {
         (child, size)
     }
 
-    /// This method always returns pointers to initialized children
-    /// (or `None`).
-    fn child_ptr(&self, i: usize) -> Option<PrefixPtr<T, B>> {
+    /// This method always returns pointers to initialized, properly aligned
+    /// children (or `None`).
+    pub fn child_ptr(&self, i: usize) -> Option<PrefixPtr<T, B>> {
         // Children at 0..self.length are always initialized.
         self.children[..self.length].get(i).copied().flatten()
     }
 
-    /// Returns `(child, index)`, or [`None`] if there's no child at `i`.
-    pub fn try_child(&self, i: usize) -> Option<(&Prefix<T, B>, usize)> {
+    pub fn child(&self, i: usize) -> &Prefix<T, B> {
         // SAFETY: `Self::child_ptr` returns initialized children, and we
         // hand out references only according to standard borrow rules, so
         // we can dereference.
-        self.child_ptr(i).map(|p| (unsafe { p.as_ref() }, self.sizes[i]))
+        unsafe { self.child_ptr(i).unwrap().as_ref() }
     }
 
-    /// Returns `(child, index)`, or [`None`] if there's no child at `i`.
-    pub fn try_child_mut(
-        &mut self,
-        i: usize,
-    ) -> Option<(&mut Prefix<T, B>, &mut usize)> {
-        // SAFETY: `Self::child_ptr` returns initialized children, and we
-        // hand out references only according to standard borrow rules, so
-        // we can dereference.
-        self.child_ptr(i)
-            .map(move |mut p| (unsafe { p.as_mut() }, &mut self.sizes[i]))
-    }
-
-    /// Returns `(child, index)`.
-    pub fn child(&self, i: usize) -> (&Prefix<T, B>, usize) {
-        self.try_child(i).unwrap()
-    }
-
-    /// Returns `(child, index)`.
-    pub fn child_mut(&mut self, i: usize) -> (&mut Prefix<T, B>, &mut usize) {
-        self.try_child_mut(i).unwrap()
-    }
-
-    pub fn sizes(&self) -> &[usize] {
-        &self.sizes[..self.length]
+    pub fn child_mut(&mut self, i: usize) -> &mut Prefix<T, B> {
+        // SAFETY: See `Self::child`.
+        unsafe { self.child_ptr(i).unwrap().as_mut() }
     }
 
     pub fn size(&self) -> usize {
-        self.sizes().iter().sum()
+        self.sizes.iter().sum()
     }
 }
 
@@ -208,10 +185,6 @@ unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
         &self.prefix
     }
 
-    fn prefix_mut(&mut self) -> &mut Self::Prefix {
-        &mut self.prefix
-    }
-
     fn size(&self) -> usize {
         self.size()
     }
@@ -224,8 +197,12 @@ unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
         self.prefix.index
     }
 
-    fn simple_insert(&mut self, i: usize, item: Self::Child) {
-        self.simple_insert(i, item);
+    fn simple_insert(
+        this: &mut NodeRef<Self, Mutable>,
+        i: usize,
+        item: Self::Child,
+    ) {
+        Self::simple_insert(this, i, item);
     }
 
     fn simple_remove(&mut self, i: usize) -> Self::Child {
@@ -241,14 +218,15 @@ unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
     }
 }
 
-impl<T, const B: usize, R: RefKind> NodeRef<InternalNode<T, B>, R> {
+impl<T, const B: usize, R> NodeRef<InternalNode<T, B>, R> {
     pub fn into_child(self, i: usize) -> PrefixRef<T, B, R> {
-        R::into_child(self, i)
+        NodeRef(self.child_ptr(i).unwrap(), Pd)
     }
 }
 
 impl<T, const B: usize> NodeRef<InternalNode<T, B>> {
+    #[allow(dead_code)]
     pub fn child_ref(&self, i: usize) -> PrefixRef<T, B> {
-        NodeRef(NonNull::from(self.child(i).0), Pd)
+        NodeRef(self.child_ptr(i).unwrap(), Pd)
     }
 }

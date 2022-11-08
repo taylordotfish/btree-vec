@@ -32,7 +32,7 @@ pub(super) struct ParentPtr<T, const B: usize>(
 
 impl<T, const B: usize> Clone for ParentPtr<T, B> {
     fn clone(&self) -> Self {
-        Self(self.0, self.1)
+        *self
     }
 }
 
@@ -55,7 +55,7 @@ impl<T, const B: usize> ParentPtr<T, B> {
 
     pub fn set(&mut self, ptr: Option<NonNull<InternalNode<T, B>>>) {
         self.0 = TaggedPtr::new(
-            ptr.map_or_else(Self::sentinel, |p| p.cast()),
+            ptr.map_or_else(Self::sentinel, NonNull::cast),
             self.0.tag(),
         );
     }

@@ -33,22 +33,16 @@ fn basic_iter() {
     for i in 0..8 {
         vec.push(i);
     }
-    for (i, n) in vec.iter().enumerate() {
-        assert!(i == *n as usize);
-    }
+    assert!(vec.iter().copied().eq(0..8));
 }
 
 #[test]
 fn medium_iter() {
-    let mut vec = BTreeVec::<u8, 7>::create();
-    for i in 0..32 {
-        vec.push(i);
+    let mut vec = BTreeVec::<_, 7>::create();
+    for i in 0..32_u32 {
+        vec.push(Box::new(i));
     }
-    for (i, n) in vec.iter().enumerate() {
-        assert!(i == *n as usize);
-    }
-    let mut state = debug::State::new();
-    println!("{}", vec.debug(&mut state));
+    assert!(vec.into_iter().map(|b| *b).eq(0..32));
 }
 
 #[test]
@@ -63,9 +57,7 @@ fn large_iter() {
     for i in 0..16 {
         assert!(vec.remove(0) == i);
     }
-    for (i, n) in vec.iter().enumerate() {
-        assert!(i == *n as usize - 16);
-    }
+    assert!(vec.iter().copied().eq(16..112));
 }
 
 #[test]
@@ -77,9 +69,7 @@ fn small_b() {
     for _ in 0..16 {
         vec.pop();
     }
-    for (a, b) in (0..16).zip(&vec) {
-        assert!(a == *b);
-    }
+    assert!((0..16).eq(vec));
 }
 
 #[test]
@@ -91,15 +81,22 @@ fn smallest_b() {
     for _ in 0..12 {
         vec.remove(7);
     }
-    for (a, b) in (0..7).chain(19..24).zip(&vec) {
-        assert!(a == *b);
-    }
+    assert!(vec.iter().copied().eq((0..7).chain(19..24)));
 }
 
 #[test]
 #[should_panic]
 fn too_small_b() {
     BTreeVec::<u8, 2>::create();
+}
+
+#[cfg(feature = "dropck_eyepatch")]
+#[test]
+fn same_life_ref() {
+    let n = Box::new(123);
+    let mut vec = BTreeVec::<_, 16>::create();
+    vec.push(&n);
+    drop(n);
 }
 
 #[allow(dead_code)]

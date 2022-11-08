@@ -86,7 +86,7 @@ impl<'a, T: Debug, const B: usize> Display for VecDebug<'a, T, B> {
             // rules, so no mutable references to data exist.
             let root = unsafe { NodeRef::new(root) };
             writeln!(f, "{I1}R -> N{}", state.id(root))?;
-            fmt_prefix(*state, f, root)?;
+            fmt_prefix(&mut state, f, root)?;
         }
         writeln!(f, "}}")
     }
@@ -118,7 +118,7 @@ fn fmt_internal<T: Debug, const B: usize>(
     for i in 0..node.length() {
         let child = node.child_ref(i);
         let child_id = state.id(child);
-        writeln!(f, "{I1}N{id} -> N{child_id} [label={}]", node.sizes()[i])?;
+        writeln!(f, "{I1}N{id} -> N{child_id} [label={}]", node.sizes[i])?;
         fmt_prefix(state, f, child)?;
     }
     Ok(())

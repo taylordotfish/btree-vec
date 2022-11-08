@@ -18,6 +18,7 @@
  */
 
 #![cfg_attr(not(test), no_std)]
+#![cfg_attr(feature = "dropck_eyepatch", feature(dropck_eyepatch))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 //! This crate provides a growable array (vector) implemented using a B-tree
@@ -34,7 +35,8 @@
 //! elements, but bulk operations, including implementations of [`Extend`]
 //! and [`FromIterator`], may be added in the future.
 //!
-//! # Example
+//! Example
+//! -------
 //!
 //! ```rust
 //! # use btree_vec::BTreeVec;
@@ -57,11 +59,21 @@
 //! }
 //! ```
 //!
+//! Crate features
+//! --------------
+//!
+//! If the crate feature `dropck_eyepatch` is enabled, items in a [`BTreeVec`]
+//! can contain references with the same life as the vector itself. This
+//! requires Rust nightly, as the unstable language feature [`dropck_eyepatch`]
+//! must be used.
+//!
+//! [`dropck_eyepatch`]: https://github.com/rust-lang/rust/issues/34761
 //! [`Extend`]: core::iter::Extend
 //! [`FromIterator`]: core::iter::FromIterator
 
 extern crate alloc;
 
+use alloc::boxed::Box;
 use core::fmt::{self, Debug, Formatter};
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
@@ -78,8 +90,9 @@ mod remove;
 mod tests;
 
 use insert::insert;
-use node::{LeafRef, NodeRef, PrefixRef};
-use node::{Mutable, Node, PrefixCast, PrefixPtr, RefKind};
+use node::{
+    LeafRef, Mutable, Node, NodeRef, PrefixCast, PrefixPtr, PrefixRef,
+};
 use remove::remove;
 
 /// A growable array (vector) implemented as a B+ tree.
@@ -93,7 +106,8 @@ use remove::remove;
 pub struct BTreeVec<T, const B: usize = 12> {
     root: Option<PrefixPtr<T, B>>,
     size: usize,
-    phantom: PhantomData<T>,
+    /// Lets dropck know that `T` may be dropped.
+    phantom: PhantomData<Box<T>>,
 }
 
 // SAFETY: `BTreeVec` owns its data, so it can be sent to another thread.
@@ -103,32 +117,31 @@ unsafe impl<T: Send, const B: usize> Send for BTreeVec<T, B> {}
 // standard borrows.
 unsafe impl<T: Sync, const B: usize> Sync for BTreeVec<T, B> {}
 
-fn leaf_for<T, const B: usize, R: RefKind>(
+fn leaf_for<T, const B: usize, R>(
     mut root: PrefixRef<T, B, R>,
     mut index: usize,
 ) -> (LeafRef<T, B, R>, usize) {
     loop {
-        root = match root.cast() {
+        let node = match root.cast() {
             PrefixCast::Leaf(node) => return (node, index),
-            PrefixCast::Internal(node) => {
-                let last = node.length() - 1;
-                let index = node
-                    .sizes()
-                    .iter()
-                    .enumerate()
-                    .take(last)
-                    .find_map(|(i, size)| {
-                        if let Some(n) = index.checked_sub(*size) {
-                            index = n;
-                            None
-                        } else {
-                            Some(i)
-                        }
-                    })
-                    .unwrap_or(last);
-                node.into_child(index)
-            }
-        }
+            PrefixCast::Internal(node) => node,
+        };
+        let last = node.length() - 1;
+        let index = node
+            .sizes
+            .iter()
+            .copied()
+            .take(last)
+            .position(|size| {
+                if let Some(n) = index.checked_sub(size) {
+                    index = n;
+                    false
+                } else {
+                    true
+                }
+            })
+            .unwrap_or(last);
+        root = node.into_child(index);
     }
 }
 
@@ -325,15 +338,35 @@ impl<T: Debug, const B: usize> Debug for BTreeVec<T, B> {
     }
 }
 
-impl<T, const B: usize> Drop for BTreeVec<T, B> {
-    fn drop(&mut self) {
-        if let Some(root) = self.root {
-            // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with standard
-            // borrowing rules, so there are no existing references.
-            unsafe { NodeRef::new_mutable(root) }.destroy();
+macro_rules! impl_drop_for_btree_vec {
+    ($($unsafe:ident)? $(#[$attr:meta])*) => {
+        $($unsafe)? impl<$(#[$attr])* T, const B: usize> ::core::ops::Drop
+            for $crate::BTreeVec<T, B>
+        {
+            fn drop(&mut self) {
+                if let Some(root) = self.root {
+                    // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with
+                    // standard borrowing rules, so there are no existing
+                    // references.
+                    unsafe { NodeRef::new_mutable(root) }.destroy();
+                }
+            }
         }
-    }
+    };
 }
+
+#[cfg(not(feature = "dropck_eyepatch"))]
+impl_drop_for_btree_vec!();
+
+// SAFETY: This `Drop` impl does not directly or indirectly access any data in
+// any `T`, except for calling its destructor (see [1]), and `Self` contains a
+// `PhantomData<Box<T>>` so dropck knows that `T` may be dropped (see [2]).
+//
+// [1]: https://doc.rust-lang.org/nomicon/dropck.html
+// [2]: https://forge.rust-lang.org/libs/maintaining-std.html
+//      #is-there-a-manual-drop-implementation
+#[cfg(feature = "dropck_eyepatch")]
+impl_drop_for_btree_vec!(unsafe #[may_dangle]);
 
 /// An iterator over the items in a [`BTreeVec`].
 pub struct Iter<'a, T, const B: usize> {
@@ -358,7 +391,25 @@ impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
     }
 }
 
-impl<'a, T, const B: usize> FusedIterator for Iter<'a, T, B> {}
+impl<T, const B: usize> FusedIterator for Iter<'_, T, B> {}
+
+impl<T, const B: usize> Clone for Iter<'_, T, B> {
+    fn clone(&self) -> Self {
+        Self {
+            leaf: self.leaf,
+            index: self.index,
+            phantom: self.phantom,
+        }
+    }
+}
+
+// SAFETY: This type yields immutable references to items in the vector, so it
+// can be `Send` as long as `T` is `Sync` (which means `&T` is `Send`).
+unsafe impl<T: Sync, const B: usize> Send for Iter<'_, T, B> {}
+
+// SAFETY: This type has no `&self` methods that access shared data or fields
+// with non-`Sync` interior mutability.
+unsafe impl<T, const B: usize> Sync for Iter<'_, T, B> {}
 
 impl<'a, T, const B: usize> IntoIterator for &'a BTreeVec<T, B> {
     type Item = &'a T;
@@ -369,7 +420,7 @@ impl<'a, T, const B: usize> IntoIterator for &'a BTreeVec<T, B> {
     }
 }
 
-/// An mutable iterator over the items in a [`BTreeVec`].
+/// A mutable iterator over the items in a [`BTreeVec`].
 pub struct IterMut<'a, T, const B: usize> {
     leaf: Option<LeafRef<T, B, Mutable>>,
     index: usize,
@@ -395,7 +446,16 @@ impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
     }
 }
 
-impl<'a, T, const B: usize> FusedIterator for IterMut<'a, T, B> {}
+impl<T, const B: usize> FusedIterator for IterMut<'_, T, B> {}
+
+// SAFETY: This type yields mutable references to items in the vector, so it
+// can be `Send` as long as `T` is `Send`. `T` doesn't need to be `Sync`
+// because no other iterator that yields items from the vector can exist at the
+// same time as this iterator.
+unsafe impl<T: Send, const B: usize> Send for IterMut<'_, T, B> {}
+
+// SAFETY: This type has no `&self` methods that access any fields.
+unsafe impl<T, const B: usize> Sync for IterMut<'_, T, B> {}
 
 impl<'a, T, const B: usize> IntoIterator for &'a mut BTreeVec<T, B> {
     type Item = &'a mut T;
@@ -408,9 +468,6 @@ impl<'a, T, const B: usize> IntoIterator for &'a mut BTreeVec<T, B> {
 
 /// An owning iterator over the items in a [`BTreeVec`].
 pub struct IntoIter<T, const B: usize> {
-    // Note: the field order is important here -- we need `_tree` to occur
-    // after `leaf` so there are no existing `NodeRef`s when `_tree` gets
-    // dropped (see `BTreeVec::drop`).
     leaf: Option<LeafRef<T, B, Mutable>>,
     length: usize,
     index: usize,
@@ -427,6 +484,7 @@ impl<T, const B: usize> Iterator for IntoIter<T, B> {
             leaf = self.leaf.as_mut()?;
             self.index = 0;
             self.length = leaf.length();
+            leaf.set_zero_length();
         }
         let index = self.index;
         self.index += 1;
@@ -436,6 +494,29 @@ impl<T, const B: usize> Iterator for IntoIter<T, B> {
 }
 
 impl<T, const B: usize> FusedIterator for IntoIter<T, B> {}
+
+// SAFETY: This type owns the items in the vector, so it can be `Send` as long
+// as `T` is `Send`.
+unsafe impl<T: Send, const B: usize> Send for IntoIter<T, B> {}
+
+// SAFETY: This type has no `&self` methods that access any fields.
+unsafe impl<T, const B: usize> Sync for IntoIter<T, B> {}
+
+impl<T, const B: usize> Drop for IntoIter<T, B> {
+    fn drop(&mut self) {
+        let mut leaf = if let Some(leaf) = self.leaf.take() {
+            leaf
+        } else {
+            return;
+        };
+        for i in self.index..self.length {
+            // SAFETY: We haven't taken the item at `index` yet.
+            unsafe {
+                leaf.take_raw_child(i).assume_init();
+            }
+        }
+    }
+}
 
 impl<T, const B: usize> IntoIterator for BTreeVec<T, B> {
     type Item = T;

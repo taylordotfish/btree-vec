@@ -1,6 +1,6 @@
 [package]
 name = "btree-vec"
-version = "0.2.4-dev"
+version = "0.2.4"
 edition = "2021"
 rust-version = "1.59"
 description = "A growable array (vector) implemented using a B-tree"
@@ -10,6 +10,9 @@ repository = "https://github.com/taylordotfish/btree-vec"
 license = "GPL-3.0-or-later"
 keywords = ["b-tree", "vec", "vector", "array"]
 categories = ["data-structures", "no-std"]
+
+[features]
+dropck_eyepatch = []
 
 [dependencies]
 tagged-pointer = "0.2"

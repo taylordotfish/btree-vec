@@ -17,7 +17,7 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::{Mutable, NodeRef, Prefix, RefKind};
+use super::{Mutable, NodeRef, Prefix};
 use super::{Node, NodeKind, SplitStrategy};
 use core::marker::PhantomData as Pd;
 use core::mem::{self, MaybeUninit};
@@ -134,6 +134,10 @@ impl<T, const B: usize> LeafNode<T, B> {
         unsafe { &mut *self.children[i].as_mut_ptr() }
     }
 
+    pub fn set_zero_length(&mut self) {
+        self.length = 0;
+    }
+
     pub fn take_raw_child(&mut self, i: usize) -> MaybeUninit<T> {
         self.length = self.length.min(i);
         mem::replace(&mut self.children[i], MaybeUninit::uninit())
@@ -162,10 +166,6 @@ unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
         &self.prefix
     }
 
-    fn prefix_mut(&mut self) -> &mut Self::Prefix {
-        &mut self.prefix
-    }
-
     fn size(&self) -> usize {
         self.size()
     }
@@ -178,8 +178,12 @@ unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
         self.prefix.index
     }
 
-    fn simple_insert(&mut self, i: usize, item: Self::Child) {
-        self.simple_insert(i, item);
+    fn simple_insert(
+        this: &mut NodeRef<Self, Mutable>,
+        i: usize,
+        item: Self::Child,
+    ) {
+        Self::simple_insert(this, i, item);
     }
 
     fn simple_remove(&mut self, i: usize) -> Self::Child {
@@ -195,7 +199,7 @@ unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
     }
 }
 
-impl<T, const B: usize, R: RefKind> NodeRef<LeafNode<T, B>, R> {
+impl<T, const B: usize, R> NodeRef<LeafNode<T, B>, R> {
     pub fn into_child<'a>(self, i: usize) -> &'a T {
         // SAFETY: The underlying node's life is not tied to this `NodeRef`'s
         // life, so we can return a reference to data in the node with any

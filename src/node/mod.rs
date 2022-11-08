@@ -27,12 +27,10 @@ use PhantomData as Pd;
 mod internal;
 mod leaf;
 mod parent_ptr;
-mod ref_kind;
 
 pub use internal::InternalNode;
 pub use leaf::LeafNode;
 use parent_ptr::ParentPtr;
-pub use ref_kind::{Immutable, Mutable, RefKind};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum NodeKind {
@@ -63,9 +61,9 @@ impl SplitStrategy {
 
 /// # Safety
 ///
-/// May be implemented only by [`InternalNode`] and [`LeafNode`]. (These types
-/// have specific behavior that certain uses may require -- this behavior may
-/// be more specifically documented later.)
+/// May be implemented only by [`InternalNode`] and [`LeafNode`]. These types
+/// have specific behavior that certain uses may require; this behavior may be
+/// more specifically documented later.
 pub unsafe trait Node: Sized {
     type Prefix;
     type Child;
@@ -74,13 +72,18 @@ pub unsafe trait Node: Sized {
     ///
     /// For use only by [`NodeRef::alloc`].
     unsafe fn new() -> Self;
+
     fn item_size(item: &Self::Child) -> usize;
     fn prefix(&self) -> &Self::Prefix;
-    fn prefix_mut(&mut self) -> &mut Self::Prefix;
     fn size(&self) -> usize;
     fn length(&self) -> usize;
     fn index(&self) -> usize;
-    fn simple_insert(&mut self, i: usize, item: Self::Child);
+    fn simple_insert(
+        this: &mut NodeRef<Self, Mutable>,
+        i: usize,
+        item: Self::Child,
+    );
+
     fn simple_remove(&mut self, i: usize) -> Self::Child;
     fn split(&mut self, strategy: SplitStrategy) -> NodeRef<Self, Mutable>;
     fn merge(&mut self, other: &mut Self);
@@ -105,7 +108,12 @@ impl<T, const B: usize> Prefix<T, B> {
     }
 }
 
-pub struct NodeRef<N, R = Immutable>(NonNull<N>, PhantomData<*const R>);
+pub struct Mutable(());
+pub struct Immutable(());
+
+/// `N` is the node type; it should be [`InternalNode`] or [`LeafNode`].
+/// `R` is the reference kind; it should be [`Immutable`] or [`Mutable`].
+pub struct NodeRef<N, R = Immutable>(NonNull<N>, PhantomData<fn() -> R>);
 
 pub type LeafRef<T, const B: usize, R = Immutable> =
     NodeRef<LeafNode<T, B>, R>;
@@ -116,7 +124,7 @@ pub type InternalRef<T, const B: usize, R = Immutable> =
 pub type PrefixRef<T, const B: usize, R = Immutable> =
     NodeRef<Prefix<T, B>, R>;
 
-impl<N, R: RefKind> NodeRef<N, R> {
+impl<N, R> NodeRef<N, R> {
     pub fn as_ptr(&self) -> NonNull<N> {
         self.0
     }
@@ -156,6 +164,10 @@ impl<N: Node> NodeRef<N, Mutable> {
             Pd,
         )
     }
+
+    pub fn simple_insert(&mut self, i: usize, item: N::Child) {
+        N::simple_insert(self, i, item);
+    }
 }
 
 pub enum PrefixCast<T, const B: usize, R> {
@@ -163,7 +175,7 @@ pub enum PrefixCast<T, const B: usize, R> {
     Leaf(NodeRef<LeafNode<T, B>, R>),
 }
 
-impl<T, const B: usize, R: RefKind> NodeRef<Prefix<T, B>, R> {
+impl<T, const B: usize, R> NodeRef<Prefix<T, B>, R> {
     pub fn cast(self) -> PrefixCast<T, B, R> {
         match self.parent.kind() {
             NodeKind::Leaf => PrefixCast::Leaf(NodeRef(self.0.cast(), Pd)),
@@ -194,12 +206,12 @@ where
     }
 }
 
-impl<N, T, const B: usize, R: RefKind> NodeRef<N, R>
+impl<N, T, const B: usize, R> NodeRef<N, R>
 where
     N: Node<Prefix = Prefix<T, B>>,
 {
     pub fn into_prefix(self) -> PrefixRef<T, B, R> {
-        R::into_prefix(self)
+        NodeRef(self.0.cast(), Pd)
     }
 
     pub fn into_parent(self) -> Result<NodeRef<InternalNode<T, B>, R>, Self> {
@@ -244,11 +256,14 @@ where
         } else {
             return (None, self, None);
         };
-        // SAFETY: We can borrow multiple different children simultaneously.
-        // (We aren't creating `NodeRef`s out of them.)
-        let [left, right] = [index.checked_sub(1), Some(index + 1)].map(|i| {
-            i.and_then(|i| parent.try_child_mut(i))
-                .map(|p| unsafe { NonNull::from(p.0).cast().as_mut() })
+
+        let siblings = [index.checked_sub(1), index.checked_add(1)];
+        let [left, right] = siblings.map(|i| {
+            i.and_then(|i| parent.child_ptr(i)).map(|p| {
+                // SAFETY: We can borrow multiple different children
+                // simultaneously. (We aren't creating `NodeRef`s out of them.)
+                unsafe { p.cast().as_mut() }
+            })
         });
         (left, self, right)
     }
@@ -256,13 +271,13 @@ where
 
 impl<N> Clone for NodeRef<N> {
     fn clone(&self) -> Self {
-        Self(self.0, self.1)
+        *self
     }
 }
 
 impl<N> Copy for NodeRef<N> {}
 
-impl<N, R: RefKind> Deref for NodeRef<N, R> {
+impl<N, R> Deref for NodeRef<N, R> {
     type Target = N;
 
     fn deref(&self) -> &N {
@@ -284,8 +299,7 @@ impl<N> From<NodeRef<N, Mutable>> for NodeRef<N> {
     }
 }
 
-impl<N, T, const B: usize, R: RefKind> From<NodeRef<N, R>>
-    for PrefixRef<T, B, R>
+impl<N, T, const B: usize, R> From<NodeRef<N, R>> for PrefixRef<T, B, R>
 where
     N: Node<Prefix = Prefix<T, B>>,
 {

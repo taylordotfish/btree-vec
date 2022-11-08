@@ -66,10 +66,9 @@ where
             dest,
         } => {
             let mut parent = node.into_parent().ok().unwrap();
-            let size = mem::replace(parent.child_mut(src).1, 0);
-            let (_, dest_size) = parent.child_mut(dest);
-            *dest_size += size;
-            *dest_size -= 1;
+            let size = mem::replace(&mut parent.sizes[src], 0);
+            parent.sizes[dest] += size;
+            parent.sizes[dest] -= 1;
             (parent, Some(src))
         }
         RemovalKind::Moved {
@@ -78,18 +77,16 @@ where
             size,
         } => {
             let mut parent = node.into_parent().ok().unwrap();
-            *parent.child_mut(src).1 -= size;
-            let (_, dest_size) = parent.child_mut(dest);
-            *dest_size += size;
-            *dest_size -= 1;
+            parent.sizes[src] -= size;
+            parent.sizes[dest] += size;
+            parent.sizes[dest] -= 1;
             (parent, None)
         }
         RemovalKind::Absorbed {
             index,
         } => match node.into_parent() {
             Ok(mut parent) => {
-                let (_, size) = parent.child_mut(index);
-                *size -= 1;
+                parent.sizes[index] -= 1;
                 (parent, None)
             }
             Err(node) => return RemovalResult::Done(node),
@@ -143,15 +140,13 @@ where
         if left.length() > B / 2 {
             let moved = left.simple_remove(left.length() - 1);
             let size = N::item_size(&moved);
-            mid.simple_insert(0, moved);
-            return make_result(
-                RemovalKind::Moved {
-                    src: left.index(),
-                    dest: mid.index(),
-                    size,
-                },
-                node,
-            );
+            let kind = RemovalKind::Moved {
+                src: left.index(),
+                dest: mid.index(),
+                size,
+            };
+            node.simple_insert(0, moved);
+            return make_result(kind, node);
         }
     }
 
@@ -159,15 +154,13 @@ where
         if right.length() > B / 2 {
             let moved = right.simple_remove(0);
             let size = N::item_size(&moved);
-            mid.simple_insert(mid.length(), moved);
-            make_result(
-                RemovalKind::Moved {
-                    src: right.index(),
-                    dest: mid.index(),
-                    size,
-                },
-                node,
-            )
+            let kind = RemovalKind::Moved {
+                src: right.index(),
+                dest: mid.index(),
+                size,
+            };
+            node.simple_insert(node.length(), moved);
+            make_result(kind, node)
         } else {
             mid.merge(right);
             make_result(

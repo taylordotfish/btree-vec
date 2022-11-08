@@ -15,7 +15,8 @@ For now, the vector supports insertions and removals only of single
 elements, but bulk operations, including implementations of [`Extend`]
 and [`FromIterator`], may be added in the future.
 
-# Example
+Example
+-------
 
 ```rust
 let mut vec = BTreeVec::new();
@@ -37,5 +38,15 @@ for (i, n) in vec.iter().copied().enumerate() {
 }
 ```
 
+Crate features
+--------------
+
+If the crate feature `dropck_eyepatch` is enabled, items in a [`BTreeVec`]
+can contain references with the same life as the vector itself. This
+requires Rust nightly, as the unstable language feature [`dropck_eyepatch`]
+must be used.
+
+[`dropck_eyepatch`]: https://github.com/rust-lang/rust/issues/34761
+[`BTreeVec`]: https://docs.rs/btree-vec/0.2/btree_vec/struct.BTreeVec.html
 [`Extend`]: https://doc.rust-lang.org/std/iter/trait.Extend.html
 [`FromIterator`]: https://doc.rust-lang.org/std/iter/trait.FromIterator.html

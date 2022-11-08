@@ -59,10 +59,9 @@ where
         }
     };
 
-    let (_, child_size) = parent.child_mut(index);
-    *child_size += 1;
+    parent.sizes[index] += 1;
     let (new, new_size) = if let Some(new @ (_, size)) = new {
-        *child_size -= size;
+        parent.sizes[index] -= size;
         new
     } else {
         return InsertionResult::Insertion(Insertion {
