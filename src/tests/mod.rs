@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -35,13 +35,11 @@ fn basic_iter() {
 
 #[test]
 fn medium_iter() {
-    let mut vec = BTreeVec::<u8, 7>::new();
-    for i in 0..32 {
-        vec.push(i);
+    let mut vec = BTreeVec::<_, 7>::new();
+    for i in 0..32_u32 {
+        vec.push(Box::new(i));
     }
-    for (i, n) in vec.iter().enumerate() {
-        assert!(i == *n as usize);
-    }
+    assert!(vec.into_iter().map(|b| *b).eq(0..32));
 }
 
 #[test]

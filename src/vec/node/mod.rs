@@ -44,13 +44,19 @@ pub unsafe trait Node: Sized {
     ///
     /// For use only by [`ExclusiveRef::alloc`].
     unsafe fn new() -> Self;
+
     fn item_size(item: &Self::Child) -> usize;
     fn prefix(&self) -> &Self::Prefix;
     fn prefix_mut(&mut self) -> &mut Self::Prefix;
     fn size(&self) -> usize;
     fn length(&self) -> usize;
     fn index(&self) -> usize;
-    fn simple_insert(&mut self, i: usize, item: Self::Child);
+    fn simple_insert(
+        this: &mut ExclusiveRef<Self>,
+        i: usize,
+        item: Self::Child,
+    );
+
     fn simple_remove(&mut self, i: usize) -> Self::Child;
     fn split(&mut self) -> ExclusiveRef<Self>;
     fn merge(&mut self, other: &mut Self);
@@ -110,6 +116,10 @@ impl<N: Node> ExclusiveRef<N> {
             NonNull::new_unchecked(Box::into_raw(Box::new(N::new())))
         })
     }
+
+    pub fn simple_insert(&mut self, i: usize, item: N::Child) {
+        N::simple_insert(self, i, item);
+    }
 }
 
 impl<N> Deref for ExclusiveRef<N> {
@@ -160,8 +170,8 @@ where
         unsafe { Box::from_raw(self.0.as_ptr()) };
     }
 
-    pub fn into_prefix(mut self) -> ExclusivePrefix<T, B> {
-        ExclusiveRef(NonNull::from(self.prefix_mut()))
+    pub fn into_prefix(self) -> ExclusivePrefix<T, B> {
+        ExclusiveRef(self.0.cast())
     }
 
     pub fn into_parent(
@@ -186,11 +196,14 @@ where
         } else {
             return (None, self, None);
         };
-        // SAFETY: We can borrow multiple different children simultaneously.
-        // (We aren't creating `ExclusiveRef`s out of them.)
-        let [left, right] = [index.checked_sub(1), Some(index + 1)].map(|i| {
-            i.and_then(|i| parent.try_child_mut(i))
-                .map(|p| unsafe { NonNull::from(p.0).cast().as_mut() })
+
+        let siblings = [index.checked_sub(1), index.checked_add(1)];
+        let [left, right] = siblings.map(|i| {
+            i.and_then(|i| parent.child_ptr(i)).map(|p| {
+                // SAFETY: We can borrow multiple different children
+                // simultaneously. (We aren't creating `NodeRef`s out of them.)
+                unsafe { p.cast().as_mut() }
+            })
         });
         (left, self, right)
     }

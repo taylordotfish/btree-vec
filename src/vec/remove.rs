@@ -138,15 +138,13 @@ where
         if left.length() > B / 2 {
             let moved = left.simple_remove(left.length() - 1);
             let size = N::item_size(&moved);
-            mid.simple_insert(0, moved);
-            return make_result(
-                RemovalKind::Moved {
-                    src: left.index(),
-                    dest: mid.index(),
-                    size,
-                },
-                node,
-            );
+            let kind = RemovalKind::Moved {
+                src: left.index(),
+                dest: mid.index(),
+                size,
+            };
+            node.simple_insert(0, moved);
+            return make_result(kind, node);
         }
     }
 
@@ -154,15 +152,13 @@ where
         if right.length() > B / 2 {
             let moved = right.simple_remove(0);
             let size = N::item_size(&moved);
-            mid.simple_insert(mid.length(), moved);
-            make_result(
-                RemovalKind::Moved {
-                    src: right.index(),
-                    dest: mid.index(),
-                    size,
-                },
-                node,
-            )
+            let kind = RemovalKind::Moved {
+                src: right.index(),
+                dest: mid.index(),
+                size,
+            };
+            node.simple_insert(node.length(), moved);
+            make_result(kind, node)
         } else {
             mid.merge(right);
             make_result(

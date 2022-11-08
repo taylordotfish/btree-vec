@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -336,9 +336,6 @@ impl<'a, T, const B: usize> IntoIterator for &'a mut BTreeVec<T, B> {
 
 /// An owning iterator over the items in a [`BTreeVec`].
 pub struct IntoIter<T, const B: usize> {
-    // Note: the field order is important here -- we need `_tree` to occur
-    // after `leaf` so there are no existing `ExclusiveRef`s when `_tree` gets
-    // dropped (see `BTreeVec::drop`).
     leaf: Option<ExclusiveLeaf<T, B>>,
     length: usize,
     index: usize,
@@ -355,6 +352,7 @@ impl<T, const B: usize> Iterator for IntoIter<T, B> {
             leaf = self.leaf.as_mut()?;
             self.index = 0;
             self.length = leaf.length();
+            leaf.set_zero_length();
         }
         let index = self.index;
         self.index += 1;
@@ -364,6 +362,22 @@ impl<T, const B: usize> Iterator for IntoIter<T, B> {
 }
 
 impl<T, const B: usize> FusedIterator for IntoIter<T, B> {}
+
+impl<T, const B: usize> Drop for IntoIter<T, B> {
+    fn drop(&mut self) {
+        let mut leaf = if let Some(leaf) = self.leaf.take() {
+            leaf
+        } else {
+            return;
+        };
+        for i in self.index..self.length {
+            // SAFETY: We haven't taken the item at `index` yet.
+            unsafe {
+                leaf.take_raw_child(i).assume_init();
+            }
+        }
+    }
+}
 
 impl<T, const B: usize> IntoIterator for BTreeVec<T, B> {
     type Item = T;

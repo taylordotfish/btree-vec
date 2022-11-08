@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -20,7 +20,6 @@
 use super::{ExclusiveInternal, ExclusivePrefix, ExclusiveRef};
 use super::{Node, Prefix, PrefixPtr};
 use core::mem;
-use core::ptr::NonNull;
 
 #[repr(C, align(2))]
 pub struct InternalNode<T, const B: usize> {
@@ -80,7 +79,7 @@ impl<T, const B: usize> InternalNode<T, B> {
         let length = self.length;
         assert!(length <= B / 2);
         assert!(other.length <= B / 2);
-        let ptr = NonNull::from(&mut *self);
+        let parent = self.child_mut(0).0.parent;
         self.sizes[length..][..other.length]
             .copy_from_slice(&other.sizes[..other.length]);
         other.children[..other.length]
@@ -92,7 +91,7 @@ impl<T, const B: usize> InternalNode<T, B> {
                 // SAFETY: We have the only reference to `other_child`, and
                 // this type's invariants guarantee its validity.
                 let prefix = unsafe { other_child.as_mut() };
-                prefix.parent.set(Some(ptr));
+                prefix.parent = parent;
                 prefix.index = length + i;
                 *self_child = Some(other_child);
             });
@@ -101,22 +100,22 @@ impl<T, const B: usize> InternalNode<T, B> {
     }
 
     pub fn simple_insert(
-        &mut self,
+        this: &mut ExclusiveRef<Self>,
         i: usize,
         mut item: (ExclusivePrefix<T, B>, usize),
     ) {
-        let length = self.length;
+        let length = this.length;
         assert!(length < B);
-        let ptr = NonNull::from(&mut *self);
+        let ptr = this.0;
         item.0.index = i;
         item.0.parent.set(Some(ptr));
-        self.children[i..length + 1].rotate_right(1);
-        self.sizes[i..length + 1].rotate_right(1);
-        self.children[i] = Some(item.0.0);
-        self.sizes[i] = item.1;
-        self.length += 1;
+        this.children[i..length + 1].rotate_right(1);
+        this.sizes[i..length + 1].rotate_right(1);
+        this.children[i] = Some(item.0.0);
+        this.sizes[i] = item.1;
+        this.length += 1;
         for i in (i + 1)..=length {
-            self.child_mut(i).0.index = i;
+            this.child_mut(i).0.index = i;
         }
     }
 
@@ -138,6 +137,13 @@ impl<T, const B: usize> InternalNode<T, B> {
         child.index = 0;
         self.length -= 1;
         (child, size)
+    }
+
+    /// This method always returns pointers to initialized, properly aligned
+    /// children (or `None`).
+    pub fn child_ptr(&self, i: usize) -> Option<PrefixPtr<T, B>> {
+        // Children at 0..self.length are always initialized.
+        self.children[..self.length].get(i).copied().flatten()
     }
 
     pub fn try_child_mut(
@@ -201,8 +207,12 @@ unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
         self.prefix.index
     }
 
-    fn simple_insert(&mut self, i: usize, item: Self::Child) {
-        self.simple_insert(i, item);
+    fn simple_insert(
+        this: &mut ExclusiveRef<Self>,
+        i: usize,
+        item: Self::Child,
+    ) {
+        Self::simple_insert(this, i, item);
     }
 
     fn simple_remove(&mut self, i: usize) -> Self::Child {
@@ -219,7 +229,7 @@ unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
 }
 
 impl<T, const B: usize> ExclusiveRef<InternalNode<T, B>> {
-    pub fn into_child(mut self, i: usize) -> ExclusivePrefix<T, B> {
-        ExclusiveRef(NonNull::from(self.child_mut(i).0))
+    pub fn into_child(self, i: usize) -> ExclusivePrefix<T, B> {
+        ExclusiveRef(self.child_ptr(i).unwrap())
     }
 }

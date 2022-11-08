@@ -52,7 +52,7 @@ impl<T, const B: usize> ParentPtr<T, B> {
 
     pub fn set(&mut self, ptr: Option<NonNull<InternalNode<T, B>>>) {
         self.0 = TaggedPtr::new(
-            ptr.map_or_else(Self::sentinel, |p| p.cast()),
+            ptr.map_or_else(Self::sentinel, NonNull::cast),
             self.0.tag(),
         );
     }

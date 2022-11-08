@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -128,6 +128,10 @@ impl<T, const B: usize> LeafNode<T, B> {
         unsafe { &mut *self.children[i].as_mut_ptr() }
     }
 
+    pub fn set_zero_length(&mut self) {
+        self.length = 0;
+    }
+
     pub fn take_raw_child(&mut self, i: usize) -> MaybeUninit<T> {
         self.length = self.length.min(i);
         mem::replace(&mut self.children[i], MaybeUninit::uninit())
@@ -172,8 +176,12 @@ unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
         self.prefix.index
     }
 
-    fn simple_insert(&mut self, i: usize, item: Self::Child) {
-        self.simple_insert(i, item);
+    fn simple_insert(
+        this: &mut ExclusiveRef<Self>,
+        i: usize,
+        item: Self::Child,
+    ) {
+        Self::simple_insert(this, i, item);
     }
 
     fn simple_remove(&mut self, i: usize) -> Self::Child {
