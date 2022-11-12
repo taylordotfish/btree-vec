@@ -17,12 +17,10 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#[cfg(btree_vec_debug)]
 use crate::debug;
 use crate::BTreeVec;
-use core::fmt::Debug;
-use std::fs::File;
-use std::io::{self, Write};
-use std::process::Command;
+use alloc::boxed::Box;
 
 mod insert;
 mod remove;
@@ -99,11 +97,16 @@ fn same_life_ref() {
     drop(n);
 }
 
+#[cfg(btree_vec_debug)]
 #[allow(dead_code)]
-fn make_graph<T: Debug, const B: usize>(
+fn make_graph<T: core::fmt::Debug, const B: usize>(
     vec: &BTreeVec<T, B>,
     state: &mut debug::State,
-) -> io::Result<()> {
+) -> std::io::Result<()> {
+    use std::fs::File;
+    use std::io::Write;
+    use std::process::Command;
+
     let mut file = File::create("graph.dot")?;
     write!(file, "{}", vec.debug(state))?;
     file.sync_all()?;

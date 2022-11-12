@@ -18,6 +18,7 @@
  */
 
 use crate::BTreeVec;
+use alloc::vec::Vec;
 
 #[test]
 fn basic_push() {

@@ -17,7 +17,7 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(all(test, btree_vec_debug)), no_std)]
 #![cfg_attr(feature = "dropck_eyepatch", feature(dropck_eyepatch))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -80,9 +80,9 @@ use core::marker::PhantomData;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
 
-#[cfg(test)]
+#[cfg(btree_vec_debug)]
 #[allow(dead_code)]
-pub(crate) mod debug;
+pub mod debug;
 mod insert;
 mod node;
 mod remove;

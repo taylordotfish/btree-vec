@@ -58,11 +58,14 @@ impl State {
     }
 }
 
+impl Default for State {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Debug, const B: usize> BTreeVec<T, B> {
-    pub(crate) fn debug<'a>(
-        &'a self,
-        state: &'a mut State,
-    ) -> VecDebug<'a, T, B> {
+    pub fn debug<'a>(&'a self, state: &'a mut State) -> VecDebug<'a, T, B> {
         VecDebug {
             state: RefCell::new(state),
             vec: self,
