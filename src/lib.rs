@@ -408,8 +408,10 @@ impl<T, const B: usize> Clone for Iter<'_, T, B> {
 unsafe impl<T: Sync, const B: usize> Send for Iter<'_, T, B> {}
 
 // SAFETY: This type has no `&self` methods that access shared data or fields
-// with non-`Sync` interior mutability.
-unsafe impl<T, const B: usize> Sync for Iter<'_, T, B> {}
+// with non-`Sync` interior mutability, but `T` must be `Sync` to match the
+// `Send` impl, since this type implements `Clone`, effectively allowing it to
+// be sent.
+unsafe impl<T: Sync, const B: usize> Sync for Iter<'_, T, B> {}
 
 impl<'a, T, const B: usize> IntoIterator for &'a BTreeVec<T, B> {
     type Item = &'a T;

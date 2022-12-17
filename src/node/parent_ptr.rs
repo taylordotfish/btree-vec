@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -18,16 +18,11 @@
  */
 
 use super::{InternalNode, NodeKind};
-use core::marker::PhantomData;
 use core::ptr::NonNull;
 use tagged_pointer::TaggedPtr;
 
-#[repr(align(2))]
-struct Align2(u16);
-
 pub(super) struct ParentPtr<T, const B: usize>(
-    TaggedPtr<Align2, 1>,
-    PhantomData<NonNull<InternalNode<T, B>>>,
+    TaggedPtr<InternalNode<T, B>, 1>,
 );
 
 impl<T, const B: usize> Clone for ParentPtr<T, B> {
@@ -39,13 +34,16 @@ impl<T, const B: usize> Clone for ParentPtr<T, B> {
 impl<T, const B: usize> Copy for ParentPtr<T, B> {}
 
 impl<T, const B: usize> ParentPtr<T, B> {
-    fn sentinel() -> NonNull<Align2> {
+    fn sentinel() -> NonNull<InternalNode<T, B>> {
+        #[repr(align(2))]
+        struct Align2(u16);
+
         static SENTINEL: Align2 = Align2(0);
-        NonNull::from(&SENTINEL)
+        NonNull::from(&SENTINEL).cast()
     }
 
     pub fn new(kind: NodeKind) -> Self {
-        Self(TaggedPtr::new(Self::sentinel(), kind as usize), PhantomData)
+        Self(TaggedPtr::new(Self::sentinel(), kind as usize))
     }
 
     pub fn get(&self) -> Option<NonNull<InternalNode<T, B>>> {
@@ -54,10 +52,7 @@ impl<T, const B: usize> ParentPtr<T, B> {
     }
 
     pub fn set(&mut self, ptr: Option<NonNull<InternalNode<T, B>>>) {
-        self.0 = TaggedPtr::new(
-            ptr.map_or_else(Self::sentinel, NonNull::cast),
-            self.0.tag(),
-        );
+        self.0.set_ptr(ptr.unwrap_or_else(Self::sentinel));
     }
 
     pub fn kind(&self) -> NodeKind {
