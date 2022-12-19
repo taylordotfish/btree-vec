@@ -19,6 +19,7 @@
 
 use super::node::{InternalNode, Node, NodeRef, Prefix, SplitStrategy};
 use super::node::{InternalRef, LeafRef, Mutable, PrefixRef};
+use crate::{Allocator, VerifiedAlloc};
 
 struct Insertion<N> {
     node: NodeRef<N, Mutable>,
@@ -36,6 +37,7 @@ enum InsertionResult<T, const B: usize> {
 fn handle_insertion<N, T, const B: usize>(
     insertion: Insertion<N>,
     root_size: usize,
+    alloc: &VerifiedAlloc<impl Allocator>,
 ) -> InsertionResult<T, B>
 where
     N: Node<Prefix = Prefix<T, B>>,
@@ -53,7 +55,7 @@ where
                 return InsertionResult::Done(root.into_prefix());
             }
             // New root
-            let mut parent = InternalRef::alloc();
+            let mut parent = InternalRef::alloc(alloc);
             parent.simple_insert(0, (root.into_prefix(), root_size));
             parent
         }
@@ -71,7 +73,7 @@ where
     };
 
     let new = (new.into_prefix(), new_size);
-    let split = insert_once(&mut parent, index + 1, new);
+    let split = insert_once(&mut parent, index + 1, new, alloc);
     InsertionResult::Insertion(Insertion {
         node: parent,
         new: split,
@@ -82,44 +84,57 @@ where
 /// returns [`None`].
 fn insert_once<N, T, const B: usize>(
     node: &mut NodeRef<N, Mutable>,
-    i: usize,
+    index: usize,
     item: N::Child,
+    alloc: &VerifiedAlloc<impl Allocator>,
 ) -> Option<NodeRef<N, Mutable>>
 where
     N: Node<Prefix = Prefix<T, B>>,
 {
     let mut split = None;
     if node.length() == B {
-        if let Some(i) = i.checked_sub(B - B / 2) {
-            split
-                .insert(node.split(SplitStrategy::LargerLeft))
-                .simple_insert(i, item);
+        if let Some(i) = index.checked_sub(B - B / 2) {
+            let new =
+                split.insert(node.split(SplitStrategy::LargerLeft, alloc));
+            new.simple_insert(i, item);
             return split;
         }
-        split = Some(node.split(SplitStrategy::LargerRight));
+        split = Some(node.split(SplitStrategy::LargerRight, alloc));
     }
-    node.simple_insert(i, item);
+    node.simple_insert(index, item);
     split
 }
 
+pub struct ItemInsertion<T, const B: usize> {
+    pub node: LeafRef<T, B, Mutable>,
+    pub index: usize,
+    pub item: T,
+    pub root_size: usize,
+}
+
 pub fn insert<T, const B: usize>(
-    mut node: LeafRef<T, B, Mutable>,
-    i: usize,
-    item: T,
-    root_size: usize,
+    insertion: ItemInsertion<T, B>,
+    alloc: &VerifiedAlloc<impl Allocator>,
 ) -> PrefixRef<T, B, Mutable> {
+    let ItemInsertion {
+        mut node,
+        index,
+        item,
+        root_size,
+    } = insertion;
     let mut result = handle_insertion(
         Insertion {
-            new: insert_once(&mut node, i, item),
+            new: insert_once(&mut node, index, item, alloc),
             node,
         },
         root_size,
+        alloc,
     );
     loop {
         result = match result {
             InsertionResult::Done(root) => return root,
             InsertionResult::Insertion(ins) => {
-                handle_insertion(ins, root_size)
+                handle_insertion(ins, root_size, alloc)
             }
         }
     }

@@ -18,6 +18,10 @@
  */
 
 #![cfg_attr(not(all(test, btree_vec_debug)), no_std)]
+#![cfg_attr(
+    any(feature = "allocator_api", has_allocator_api),
+    feature(allocator_api)
+)]
 #![cfg_attr(feature = "dropck_eyepatch", feature(dropck_eyepatch))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -67,13 +71,33 @@
 //! requires Rust nightly, as the unstable language feature [`dropck_eyepatch`]
 //! must be used.
 //!
+//! If the crate feature `allocator_api` is enabled, you can configure
+//! [`BTreeVec`] with the unstable [`Allocator`] trait. Alternatively, if the
+//! feature `allocator-fallback` is enabled, this crate will use the allocator
+//! API provided by [allocator-fallback] instead of the standard library’s.
+//!
 //! [`dropck_eyepatch`]: https://github.com/rust-lang/rust/issues/34761
+//! [allocator-fallback]: https://docs.rs/allocator-fallback
+//!
 //! [`Extend`]: core::iter::Extend
 //! [`FromIterator`]: core::iter::FromIterator
+//! [`Allocator`]: alloc::alloc::Allocator
 
 extern crate alloc;
 
+#[cfg(feature = "allocator_api")]
+use alloc::alloc as allocator;
+
+#[cfg(not(feature = "allocator_api"))]
+#[cfg(feature = "allocator-fallback")]
+use allocator_fallback as allocator;
+
+#[cfg(not(any_allocator_api))]
+#[path = "alloc_fallback.rs"]
+mod allocator;
+
 use alloc::boxed::Box;
+use allocator::{Allocator, Global};
 use core::fmt::{self, Debug, Formatter};
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
@@ -88,12 +112,13 @@ mod node;
 mod remove;
 #[cfg(test)]
 mod tests;
+mod verified_alloc;
 
-use insert::insert;
-use node::{
-    LeafRef, Mutable, Node, NodeRef, PrefixCast, PrefixPtr, PrefixRef,
-};
+use insert::{insert, ItemInsertion};
+use node::{LeafRef, Mutable, Node, NodeRef};
+use node::{PrefixCast, PrefixPtr, PrefixRef};
 use remove::remove;
+use verified_alloc::VerifiedAlloc;
 
 /// A growable array (vector) implemented as a B+ tree.
 ///
@@ -103,19 +128,30 @@ use remove::remove;
 /// `B` is the branching factor. It must be at least 3. The standard library
 /// uses a value of 6 for its B-tree structures. Larger values are better when
 /// `T` is smaller.
-pub struct BTreeVec<T, const B: usize = 12> {
+pub struct BTreeVec<T, const B: usize = 12, A: Allocator = Global> {
     root: Option<PrefixPtr<T, B>>,
     size: usize,
+    alloc: VerifiedAlloc<A>,
     /// Lets dropck know that `T` may be dropped.
     phantom: PhantomData<Box<T>>,
 }
 
 // SAFETY: `BTreeVec` owns its data, so it can be sent to another thread.
-unsafe impl<T: Send, const B: usize> Send for BTreeVec<T, B> {}
+unsafe impl<T, const B: usize, A> Send for BTreeVec<T, B, A>
+where
+    T: Send,
+    A: Allocator,
+{
+}
 
 // SAFETY: `BTreeVec` owns its data and provides access to it only through
 // standard borrows.
-unsafe impl<T: Sync, const B: usize> Sync for BTreeVec<T, B> {}
+unsafe impl<T, const B: usize, A> Sync for BTreeVec<T, B, A>
+where
+    T: Sync,
+    A: Allocator,
+{
+}
 
 fn leaf_for<T, const B: usize, R>(
     mut root: PrefixRef<T, B, R>,
@@ -154,14 +190,59 @@ impl<T> BTreeVec<T> {
     }
 }
 
+impl<T, A: Allocator> BTreeVec<T, 12, A> {
+    #[cfg_attr(
+        not(any(feature = "allocator_api", feature = "allocator-fallback")),
+        doc(hidden)
+    )]
+    /// Creates a new [`BTreeVec`] with the given allocator. Note that this
+    /// function is implemented only for the default value of `B`; see
+    /// [`Self::create_in`] for an equivalent that works with all values of
+    /// `B`.
+    pub fn new_in(alloc: A) -> Self {
+        Self::create_in(alloc)
+    }
+}
+
 impl<T, const B: usize> BTreeVec<T, B> {
     /// Creates a new [`BTreeVec`]. This function exists because
     /// [`BTreeVec::new`] is implemented only for the default value of `B`.
     pub fn create() -> Self {
+        Self::create_in(Global)
+    }
+}
+
+impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
+    #[cfg_attr(
+        not(any(feature = "allocator_api", feature = "allocator-fallback")),
+        doc(hidden)
+    )]
+    /// Creates a new [`BTreeVec`] with the given allocator. This function
+    /// exists because [`BTreeVec::new_in`] is implemented only for the default
+    /// value of `B`.
+    pub fn create_in(alloc: A) -> Self {
         assert!(B >= 3);
+        // SAFETY:
+        //
+        // * All nodes are allocated by `alloc`, either via the calls to
+        //  `insert` and `LeafRef::alloc` in `Self::insert`. Nodes are
+        //  deallocated in two places: via the call to `remove` in
+        //  `Self::remove`, and via the call to `NodeRef::destroy` in
+        //  `Self::drop`. In both of these cases, `alloc` is provided as the
+        //  allocator with which to deallocate the nodes.
+        //
+        // * When `alloc` (`Self.alloc`) is dropped, `Self::drop` will have
+        //   run, which destroys all nodes. If `alloc`'s memory is reused
+        //   (e.g., via `mem::forget`), the only way this can happen is if the
+        //   operation that made its memory able to be reused applied to the
+        //   entire `BTreeVec`. Thus, all allocated nodes will become
+        //   inaccessible as they are not exposed via any public APIs,
+        //   guaranteeing that they will never be accessed.
+        let alloc = unsafe { VerifiedAlloc::new(alloc) };
         Self {
             root: None,
             size: 0,
+            alloc,
             phantom: PhantomData,
         }
     }
@@ -251,12 +332,21 @@ impl<T, const B: usize> BTreeVec<T, B> {
     /// Panics if `index` is greater than [`self.len()`](Self::len).
     pub fn insert(&mut self, index: usize, item: T) {
         assert!(index <= self.size);
-        self.root
-            .get_or_insert_with(|| LeafRef::alloc().into_prefix().as_ptr());
+        self.root.get_or_insert_with(|| {
+            LeafRef::alloc(&self.alloc).into_prefix().as_ptr()
+        });
         // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with standard
         // borrowing rules, so there are no existing references.
         let (leaf, index) = unsafe { self.leaf_for_mut(index) };
-        let root = insert(leaf, index, item, self.size);
+        let root = insert(
+            ItemInsertion {
+                node: leaf,
+                index,
+                item,
+                root_size: self.size,
+            },
+            &self.alloc,
+        );
         self.root = Some(root.as_ptr());
         self.size += 1;
     }
@@ -276,7 +366,7 @@ impl<T, const B: usize> BTreeVec<T, B> {
         // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with
         // standard borrowing rules, so there are no existing references.
         let (leaf, index) = unsafe { self.leaf_for_mut(index) };
-        let (root, item) = remove(leaf, index);
+        let (root, item) = remove(leaf, index, &self.alloc);
         self.root = Some(root.as_ptr());
         self.size -= 1;
         item
@@ -312,13 +402,16 @@ impl<T, const B: usize> BTreeVec<T, B> {
     }
 }
 
-impl<T, const B: usize> Default for BTreeVec<T, B> {
+impl<T, const B: usize, A> Default for BTreeVec<T, B, A>
+where
+    A: Allocator + Default,
+{
     fn default() -> Self {
-        Self::create()
+        Self::create_in(A::default())
     }
 }
 
-impl<T, const B: usize> Index<usize> for BTreeVec<T, B> {
+impl<T, const B: usize, A: Allocator> Index<usize> for BTreeVec<T, B, A> {
     type Output = T;
 
     fn index(&self, index: usize) -> &T {
@@ -326,37 +419,17 @@ impl<T, const B: usize> Index<usize> for BTreeVec<T, B> {
     }
 }
 
-impl<T, const B: usize> IndexMut<usize> for BTreeVec<T, B> {
+impl<T, const B: usize, A: Allocator> IndexMut<usize> for BTreeVec<T, B, A> {
     fn index_mut(&mut self, index: usize) -> &mut T {
         self.get_mut(index).unwrap()
     }
 }
 
-impl<T: Debug, const B: usize> Debug for BTreeVec<T, B> {
+impl<T: Debug, const B: usize, A: Allocator> Debug for BTreeVec<T, B, A> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
 }
-
-macro_rules! impl_drop_for_btree_vec {
-    ($($unsafe:ident)? $(#[$attr:meta])*) => {
-        $($unsafe)? impl<$(#[$attr])* T, const B: usize> ::core::ops::Drop
-            for $crate::BTreeVec<T, B>
-        {
-            fn drop(&mut self) {
-                if let Some(root) = self.root {
-                    // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with
-                    // standard borrowing rules, so there are no existing
-                    // references.
-                    unsafe { NodeRef::new_mutable(root) }.destroy();
-                }
-            }
-        }
-    };
-}
-
-#[cfg(not(feature = "dropck_eyepatch"))]
-impl_drop_for_btree_vec!();
 
 // SAFETY: This `Drop` impl does not directly or indirectly access any data in
 // any `T`, except for calling its destructor (see [1]), and `Self` contains a
@@ -365,8 +438,21 @@ impl_drop_for_btree_vec!();
 // [1]: https://doc.rust-lang.org/nomicon/dropck.html
 // [2]: https://forge.rust-lang.org/libs/maintaining-std.html
 //      #is-there-a-manual-drop-implementation
-#[cfg(feature = "dropck_eyepatch")]
-impl_drop_for_btree_vec!(unsafe #[may_dangle]);
+#[cfg_attr(feature = "dropck_eyepatch", add_syntax::prepend(unsafe))]
+impl<#[cfg_attr(feature = "dropck_eyepatch", may_dangle)] T, const B: usize, A>
+    Drop for BTreeVec<T, B, A>
+where
+    A: Allocator,
+{
+    fn drop(&mut self) {
+        if let Some(root) = self.root {
+            // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with
+            // standard borrowing rules, so there are no existing
+            // references.
+            unsafe { NodeRef::new_mutable(root) }.destroy(&self.alloc);
+        }
+    }
+}
 
 /// An iterator over the items in a [`BTreeVec`].
 pub struct Iter<'a, T, const B: usize> {
@@ -413,7 +499,10 @@ unsafe impl<T: Sync, const B: usize> Send for Iter<'_, T, B> {}
 // be sent.
 unsafe impl<T: Sync, const B: usize> Sync for Iter<'_, T, B> {}
 
-impl<'a, T, const B: usize> IntoIterator for &'a BTreeVec<T, B> {
+impl<'a, T, const B: usize, A> IntoIterator for &'a BTreeVec<T, B, A>
+where
+    A: Allocator,
+{
     type Item = &'a T;
     type IntoIter = Iter<'a, T, B>;
 
@@ -459,7 +548,10 @@ unsafe impl<T: Send, const B: usize> Send for IterMut<'_, T, B> {}
 // SAFETY: This type has no `&self` methods that access any fields.
 unsafe impl<T, const B: usize> Sync for IterMut<'_, T, B> {}
 
-impl<'a, T, const B: usize> IntoIterator for &'a mut BTreeVec<T, B> {
+impl<'a, T, const B: usize, A> IntoIterator for &'a mut BTreeVec<T, B, A>
+where
+    A: Allocator,
+{
     type Item = &'a mut T;
     type IntoIter = IterMut<'a, T, B>;
 
@@ -469,14 +561,14 @@ impl<'a, T, const B: usize> IntoIterator for &'a mut BTreeVec<T, B> {
 }
 
 /// An owning iterator over the items in a [`BTreeVec`].
-pub struct IntoIter<T, const B: usize> {
+pub struct IntoIter<T, const B: usize, A: Allocator = Global> {
     leaf: Option<LeafRef<T, B, Mutable>>,
     length: usize,
     index: usize,
-    _tree: BTreeVec<T, B>,
+    _tree: BTreeVec<T, B, A>,
 }
 
-impl<T, const B: usize> Iterator for IntoIter<T, B> {
+impl<T, const B: usize, A: Allocator> Iterator for IntoIter<T, B, A> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -495,16 +587,21 @@ impl<T, const B: usize> Iterator for IntoIter<T, B> {
     }
 }
 
-impl<T, const B: usize> FusedIterator for IntoIter<T, B> {}
+impl<T, const B: usize, A: Allocator> FusedIterator for IntoIter<T, B, A> {}
 
 // SAFETY: This type owns the items in the vector, so it can be `Send` as long
 // as `T` is `Send`.
-unsafe impl<T: Send, const B: usize> Send for IntoIter<T, B> {}
+unsafe impl<T, const B: usize, A> Send for IntoIter<T, B, A>
+where
+    T: Send,
+    A: Allocator,
+{
+}
 
 // SAFETY: This type has no `&self` methods that access any fields.
-unsafe impl<T, const B: usize> Sync for IntoIter<T, B> {}
+unsafe impl<T, const B: usize, A: Allocator> Sync for IntoIter<T, B, A> {}
 
-impl<T, const B: usize> Drop for IntoIter<T, B> {
+impl<T, const B: usize, A: Allocator> Drop for IntoIter<T, B, A> {
     fn drop(&mut self) {
         let mut leaf = if let Some(leaf) = self.leaf.take() {
             leaf
@@ -520,9 +617,9 @@ impl<T, const B: usize> Drop for IntoIter<T, B> {
     }
 }
 
-impl<T, const B: usize> IntoIterator for BTreeVec<T, B> {
+impl<T, const B: usize, A: Allocator> IntoIterator for BTreeVec<T, B, A> {
     type Item = T;
-    type IntoIter = IntoIter<T, B>;
+    type IntoIter = IntoIter<T, B, A>;
 
     fn into_iter(mut self) -> Self::IntoIter {
         // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with standard

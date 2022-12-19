@@ -19,6 +19,7 @@
 
 use super::{InternalRef, Mutable, NodeRef, PrefixRef};
 use super::{Node, NodeKind, Prefix, PrefixPtr, SplitStrategy};
+use crate::{Allocator, VerifiedAlloc};
 use core::marker::PhantomData as Pd;
 use core::mem;
 
@@ -30,21 +31,8 @@ pub struct InternalNode<T, const B: usize> {
     pub sizes: [usize; B],
 }
 
-impl<T, const B: usize> Drop for InternalNode<T, B> {
-    fn drop(&mut self) {
-        for child in &mut self.children[..self.length] {
-            let mut child = NodeRef(child.take().unwrap(), Pd);
-            child.parent.set(None);
-            child.destroy();
-        }
-    }
-}
-
 impl<T, const B: usize> InternalNode<T, B> {
-    /// # Safety
-    ///
-    /// To be used only by [`NodeRef::alloc`].
-    pub unsafe fn new() -> Self {
+    fn new() -> Self {
         Self {
             prefix: Prefix::new(NodeKind::Internal),
             length: 0,
@@ -56,10 +44,11 @@ impl<T, const B: usize> InternalNode<T, B> {
     pub fn split(
         &mut self,
         strategy: SplitStrategy,
+        alloc: &VerifiedAlloc<impl Allocator>,
     ) -> NodeRef<Self, Mutable> {
         let (left, right) = strategy.sizes(B);
         assert!(self.length == B);
-        let mut new = InternalRef::alloc();
+        let mut new = InternalRef::alloc(alloc);
         let ptr = new.0;
         new.sizes[..right].copy_from_slice(&self.sizes[left..]);
         self.children[left..]
@@ -165,16 +154,24 @@ impl<T, const B: usize> InternalNode<T, B> {
     pub fn size(&self) -> usize {
         self.sizes.iter().sum()
     }
+
+    pub fn destroy_children(&mut self, alloc: &VerifiedAlloc<impl Allocator>) {
+        self.children[..mem::take(&mut self.length)]
+            .iter_mut()
+            .map(|child| NodeRef(child.take().unwrap(), Pd))
+            .for_each(|mut child| {
+                child.parent.set(None);
+                child.destroy(alloc);
+            });
+    }
 }
 
-// SAFETY: `Node` may be implemented by `InternalNode`.
-unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
+impl<T, const B: usize> Node for InternalNode<T, B> {
     type Prefix = Prefix<T, B>;
     type Child = (PrefixRef<T, B, Mutable>, usize);
 
-    unsafe fn new() -> Self {
-        // SAFETY: Checked by caller.
-        unsafe { InternalNode::<T, B>::new() }
+    fn new(_: super::node_ref_alloc::Token) -> Self {
+        Self::new()
     }
 
     fn item_size(item: &Self::Child) -> usize {
@@ -209,12 +206,20 @@ unsafe impl<T, const B: usize> Node for InternalNode<T, B> {
         self.simple_remove(i)
     }
 
-    fn split(&mut self, strategy: SplitStrategy) -> NodeRef<Self, Mutable> {
-        self.split(strategy)
+    fn split(
+        &mut self,
+        strategy: SplitStrategy,
+        alloc: &VerifiedAlloc<impl Allocator>,
+    ) -> NodeRef<Self, Mutable> {
+        self.split(strategy, alloc)
     }
 
     fn merge(&mut self, other: &mut Self) {
         self.merge(other)
+    }
+
+    fn destroy_children(&mut self, alloc: &VerifiedAlloc<impl Allocator>) {
+        self.destroy_children(alloc);
     }
 }
 

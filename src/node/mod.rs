@@ -17,7 +17,8 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use alloc::boxed::Box;
+use crate::{Allocator, VerifiedAlloc};
+use alloc::alloc::{handle_alloc_error, Layout};
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
@@ -59,20 +60,17 @@ impl SplitStrategy {
     }
 }
 
-/// # Safety
-///
-/// May be implemented only by [`InternalNode`] and [`LeafNode`]. These types
-/// have specific behavior that certain uses may require; this behavior may be
-/// more specifically documented later.
-pub unsafe trait Node: Sized {
+mod sealed {
+    pub trait Sealed {}
+    impl<T, const B: usize> Sealed for super::InternalNode<T, B> {}
+    impl<T, const B: usize> Sealed for super::LeafNode<T, B> {}
+}
+
+pub trait Node: sealed::Sealed + Sized {
     type Prefix;
     type Child;
 
-    /// # Safety
-    ///
-    /// For use only by [`NodeRef::alloc`].
-    unsafe fn new() -> Self;
-
+    fn new(_: node_ref_alloc::Token) -> Self;
     fn item_size(item: &Self::Child) -> usize;
     fn prefix(&self) -> &Self::Prefix;
     fn size(&self) -> usize;
@@ -83,10 +81,16 @@ pub unsafe trait Node: Sized {
         i: usize,
         item: Self::Child,
     );
-
     fn simple_remove(&mut self, i: usize) -> Self::Child;
-    fn split(&mut self, strategy: SplitStrategy) -> NodeRef<Self, Mutable>;
+    fn split(
+        &mut self,
+        strategy: SplitStrategy,
+        alloc: &VerifiedAlloc<impl Allocator>,
+    ) -> NodeRef<Self, Mutable>;
     fn merge(&mut self, other: &mut Self);
+    fn destroy_children(&mut self, alloc: &VerifiedAlloc<impl Allocator>) {
+        let _ = alloc;
+    }
 }
 
 #[repr(C)]
@@ -153,16 +157,30 @@ impl<N> NodeRef<N, Mutable> {
     }
 }
 
+mod node_ref_alloc {
+    use super::*;
+
+    /// Ensures that only [`alloc`](self::alloc) can create nodes.
+    pub struct Token(());
+
+    pub fn alloc<N: Node>(
+        alloc: &VerifiedAlloc<impl Allocator>,
+    ) -> NodeRef<N, Mutable> {
+        let layout = Layout::new::<N>();
+        let ptr = alloc
+            .allocate(layout)
+            .unwrap_or_else(|_| handle_alloc_error(layout))
+            .cast::<N>();
+        unsafe {
+            ptr.as_ptr().write(N::new(Token(())));
+        }
+        NodeRef(ptr, Pd)
+    }
+}
+
 impl<N: Node> NodeRef<N, Mutable> {
-    pub fn alloc() -> Self {
-        Self(
-            // SAFETY: By definition, it is safe for `NodeRef::alloc` (and no
-            // other function) to call `Node::new`.
-            unsafe {
-                NonNull::new_unchecked(Box::into_raw(Box::new(N::new())))
-            },
-            Pd,
-        )
+    pub fn alloc(alloc: &VerifiedAlloc<impl Allocator>) -> Self {
+        node_ref_alloc::alloc(alloc)
     }
 
     pub fn simple_insert(&mut self, i: usize, item: N::Child) {
@@ -187,10 +205,10 @@ impl<T, const B: usize, R> NodeRef<Prefix<T, B>, R> {
 }
 
 impl<T, const B: usize> NodeRef<Prefix<T, B>, Mutable> {
-    pub fn destroy(self) {
+    pub fn destroy(self, alloc: &VerifiedAlloc<impl Allocator>) {
         match self.cast() {
-            PrefixCast::Internal(node) => node.destroy(),
-            PrefixCast::Leaf(node) => node.destroy(),
+            PrefixCast::Internal(node) => node.destroy(alloc),
+            PrefixCast::Leaf(node) => node.destroy(alloc),
         }
     }
 }
@@ -199,10 +217,15 @@ impl<N, T, const B: usize> NodeRef<N, Mutable>
 where
     N: Node<Prefix = Prefix<T, B>>,
 {
-    pub fn destroy(self) {
+    pub fn destroy(mut self, alloc: &VerifiedAlloc<impl Allocator>) {
         assert!(self.parent().is_none());
-        // SAFETY: `NodeRef` is designed to make this safe.
-        unsafe { Box::from_raw(self.0.as_ptr()) };
+        self.destroy_children(alloc);
+        // SAFETY: `self.0` is always an initialized, properly aligned pointer.
+        let layout = Layout::for_value(&unsafe { self.0.as_ptr().read() });
+        // SAFETY: Guaranteed by `VerifiedAlloc`.
+        unsafe {
+            alloc.deallocate(self.0.cast(), layout);
+        }
     }
 }
 

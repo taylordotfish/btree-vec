@@ -46,7 +46,15 @@ can contain references with the same life as the vector itself. This
 requires Rust nightly, as the unstable language feature [`dropck_eyepatch`]
 must be used.
 
+If the crate feature `allocator_api` is enabled, you can configure
+[`BTreeVec`] with the unstable [`Allocator`] trait. Alternatively, if the
+feature `allocator-fallback` is enabled, this crate will use the allocator
+API provided by [allocator-fallback] instead of the standard library’s.
+
 [`dropck_eyepatch`]: https://github.com/rust-lang/rust/issues/34761
-[`BTreeVec`]: https://docs.rs/btree-vec/0.2/btree_vec/struct.BTreeVec.html
+[allocator-fallback]: https://docs.rs/allocator-fallback
+
+[`BTreeVec`]: https://docs.rs/btree-vec/0.3/btree_vec/struct.BTreeVec.html
 [`Extend`]: https://doc.rust-lang.org/std/iter/trait.Extend.html
 [`FromIterator`]: https://doc.rust-lang.org/std/iter/trait.FromIterator.html
+[`Allocator`]: https://doc.rust-lang.org/stable/std/alloc/trait.Allocator.html

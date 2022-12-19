@@ -17,8 +17,9 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::{Mutable, NodeRef, Prefix};
+use super::{LeafRef, Mutable, NodeRef, Prefix};
 use super::{Node, NodeKind, SplitStrategy};
+use crate::{Allocator, VerifiedAlloc};
 use core::marker::PhantomData as Pd;
 use core::mem::{self, MaybeUninit};
 use core::ptr::{self, NonNull};
@@ -43,10 +44,7 @@ impl<T, const B: usize> Drop for LeafNode<T, B> {
 }
 
 impl<T, const B: usize> LeafNode<T, B> {
-    /// # Safety
-    ///
-    /// To be used only by [`NodeRef::alloc`].
-    pub unsafe fn new() -> Self {
+    fn new() -> Self {
         Self {
             prefix: Prefix::new(NodeKind::Leaf),
             length: 0,
@@ -58,10 +56,11 @@ impl<T, const B: usize> LeafNode<T, B> {
     pub fn split(
         &mut self,
         strategy: SplitStrategy,
+        alloc: &VerifiedAlloc<impl Allocator>,
     ) -> NodeRef<Self, Mutable> {
         let (left, right) = strategy.sizes(B);
         assert!(self.length == B);
-        let mut new = NodeRef::<Self, _>::alloc();
+        let mut new = LeafRef::alloc(alloc);
         // SAFETY: Guaranteed by this type's invariants (length is always
         // accurate).
         unsafe {
@@ -148,14 +147,12 @@ impl<T, const B: usize> LeafNode<T, B> {
     }
 }
 
-// SAFETY: `Node` may be implemented by `LeafNode`.
-unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
+impl<T, const B: usize> Node for LeafNode<T, B> {
     type Prefix = Prefix<T, B>;
     type Child = T;
 
-    unsafe fn new() -> Self {
-        // SAFETY: Checked by caller.
-        unsafe { Self::new() }
+    fn new(_: super::node_ref_alloc::Token) -> Self {
+        Self::new()
     }
 
     fn item_size(_item: &Self::Child) -> usize {
@@ -190,8 +187,12 @@ unsafe impl<T, const B: usize> Node for LeafNode<T, B> {
         self.simple_remove(i)
     }
 
-    fn split(&mut self, strategy: SplitStrategy) -> NodeRef<Self, Mutable> {
-        self.split(strategy)
+    fn split(
+        &mut self,
+        strategy: SplitStrategy,
+        alloc: &VerifiedAlloc<impl Allocator>,
+    ) -> NodeRef<Self, Mutable> {
+        self.split(strategy, alloc)
     }
 
     fn merge(&mut self, other: &mut Self) {

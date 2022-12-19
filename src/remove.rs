@@ -19,6 +19,7 @@
 
 use super::node::{InternalNode, Node, Prefix};
 use super::node::{LeafRef, Mutable, NodeRef, PrefixRef};
+use crate::{Allocator, VerifiedAlloc};
 use core::mem;
 
 struct Removal<N> {
@@ -55,6 +56,7 @@ enum RemovalResult<N, T, const B: usize> {
 
 fn handle_removal<N, T, const B: usize>(
     removal: Removal<N>,
+    alloc: &VerifiedAlloc<impl Allocator>,
 ) -> RemovalResult<N, T, B>
 where
     N: Node<Prefix = Prefix<T, B>>,
@@ -95,7 +97,7 @@ where
 
     if let Some(empty) = empty {
         let (removal, child) = remove_once(parent, empty);
-        child.0.destroy();
+        child.0.destroy(alloc);
         RemovalResult::Removal(removal)
     } else {
         RemovalResult::Removal(Removal {
@@ -188,20 +190,21 @@ where
 pub fn remove<T, const B: usize>(
     node: LeafRef<T, B, Mutable>,
     i: usize,
+    alloc: &VerifiedAlloc<impl Allocator>,
 ) -> (PrefixRef<T, B, Mutable>, T) {
     let (removal, item) = remove_once(node, i);
-    let result = handle_removal(removal);
+    let result = handle_removal(removal, alloc);
     let mut removal = match result {
         RemovalResult::Removal(removal) => removal,
         RemovalResult::Done(root) => return (root.into_prefix(), item),
     };
     loop {
-        removal = match handle_removal(removal) {
+        removal = match handle_removal(removal, alloc) {
             RemovalResult::Removal(removal) => removal,
             RemovalResult::Done(mut root) => {
                 let root = if root.length() == 1 {
                     let child = root.simple_remove(0).0;
-                    root.destroy();
+                    root.destroy(alloc);
                     child
                 } else {
                     root.into_prefix()

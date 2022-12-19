@@ -1,8 +1,8 @@
 [package]
 name = "btree-vec"
-version = "0.2.6"
+version = "0.3.0"
 edition = "2021"
-rust-version = "1.59"
+rust-version = "1.60"
 description = "A growable array (vector) implemented using a B-tree"
 documentation = "https://docs.rs/btree-vec"
 readme = "misc/crate-readme.md"
@@ -12,7 +12,25 @@ keywords = ["b-tree", "vec", "vector", "array"]
 categories = ["data-structures", "no-std"]
 
 [features]
-dropck_eyepatch = []
+allocator_api = ["allocator-fallback?/allocator_api"]
+dropck_eyepatch = ["add-syntax"]
 
 [dependencies]
 tagged-pointer = "0.2.4"
+
+[dependencies.add-syntax]
+version = "0.1"
+optional = true
+
+[dependencies.allocator-fallback]
+version = "0.1.7"
+default-features = false
+optional = true
+
+[build-dependencies.allocator-fallback]
+version = "0.1.7"
+default-features = false
+optional = true
+
+[package.metadata.docs.rs]
+features = ["allocator_api"]
