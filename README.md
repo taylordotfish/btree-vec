@@ -54,7 +54,7 @@ API provided by [allocator-fallback] instead of the standard library’s.
 [`dropck_eyepatch`]: https://github.com/rust-lang/rust/issues/34761
 [allocator-fallback]: https://docs.rs/allocator-fallback
 
-[`BTreeVec`]: https://docs.rs/btree-vec/0.3/btree_vec/struct.BTreeVec.html
+[`BTreeVec`]: https://docs.rs/btree-vec/0.2/btree_vec/struct.BTreeVec.html
 [`Extend`]: https://doc.rust-lang.org/std/iter/trait.Extend.html
 [`FromIterator`]: https://doc.rust-lang.org/std/iter/trait.FromIterator.html
 [`Allocator`]: https://doc.rust-lang.org/stable/std/alloc/trait.Allocator.html

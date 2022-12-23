@@ -1,8 +1,8 @@
 [package]
 name = "btree-vec"
-version = "0.3.0"
+version = "0.2.7"
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.59"
 description = "A growable array (vector) implemented using a B-tree"
 documentation = "https://docs.rs/btree-vec"
 readme = "misc/crate-readme.md"
@@ -12,7 +12,9 @@ keywords = ["b-tree", "vec", "vector", "array"]
 categories = ["data-structures", "no-std"]
 
 [features]
-allocator_api = ["allocator-fallback?/allocator_api"]
+# This should be a weak dependency, but Rust 1.59 doesn't support this.
+# btree-vec 0.3 increases the MSRV and makes this a weak dependency.
+allocator_api = ["allocator-fallback/allocator_api"]
 dropck_eyepatch = ["add-syntax"]
 
 [dependencies]
