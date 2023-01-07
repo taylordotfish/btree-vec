@@ -99,7 +99,7 @@ mod allocator;
 use alloc::boxed::Box;
 use allocator::{Allocator, Global};
 use core::fmt::{self, Debug, Formatter};
-use core::iter::FusedIterator;
+use core::iter::{ExactSizeIterator, FusedIterator};
 use core::marker::PhantomData;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
@@ -163,11 +163,8 @@ fn leaf_for<T, const B: usize, R>(
             PrefixCast::Internal(node) => node,
         };
         let last = node.length() - 1;
-        let index = node
-            .sizes
-            .iter()
-            .copied()
-            .take(last)
+        let mut sizes = node.sizes.iter().copied().take(last);
+        let index = sizes
             .position(|size| {
                 if let Some(n) = index.checked_sub(size) {
                     index = n;
@@ -385,6 +382,7 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
         Iter {
             leaf: self.root.map(|_| unsafe { self.leaf_for(0) }.0),
             index: 0,
+            remaining: self.len(),
             phantom: PhantomData,
         }
     }
@@ -397,6 +395,7 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
         IterMut {
             leaf: self.root.map(|_| unsafe { self.leaf_for_mut(0) }.0),
             index: 0,
+            remaining: self.len(),
             phantom: PhantomData,
         }
     }
@@ -454,10 +453,37 @@ where
     }
 }
 
+fn nth<T, const B: usize, R>(
+    leaf: LeafRef<T, B, R>,
+    index: usize,
+    mut n: usize,
+) -> Option<(LeafRef<T, B, R>, usize)> {
+    if let Some(new) = n.checked_sub(leaf.length() - index) {
+        n = new;
+    } else {
+        return Some((leaf, index + n));
+    };
+    let mut child_index = leaf.index();
+    let mut parent = leaf.into_parent().ok()?;
+    loop {
+        let sizes = parent.sizes[..parent.length()].iter().copied();
+        for (i, size) in sizes.enumerate().skip(child_index + 1) {
+            if let Some(new) = n.checked_sub(size) {
+                n = new;
+            } else {
+                return Some(leaf_for(parent.into_child(i), n));
+            }
+        }
+        child_index = parent.index();
+        parent = parent.into_parent().ok()?;
+    }
+}
+
 /// An iterator over the items in a [`BTreeVec`].
 pub struct Iter<'a, T, const B: usize> {
     leaf: Option<LeafRef<T, B>>,
     index: usize,
+    remaining: usize,
     phantom: PhantomData<&'a T>,
 }
 
@@ -475,15 +501,34 @@ impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
         self.index += 1;
         Some(leaf.into_child(index))
     }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let (leaf, i) = nth(self.leaf.take()?, self.index, n)?;
+        self.index = i + 1;
+        Some(self.leaf.insert(leaf).into_child(i))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
 }
 
 impl<T, const B: usize> FusedIterator for Iter<'_, T, B> {}
+
+impl<T, const B: usize> ExactSizeIterator for Iter<'_, T, B> {
+    fn len(&self) -> usize {
+        let (lower, upper) = self.size_hint();
+        debug_assert_eq!(Some(lower), upper);
+        lower
+    }
+}
 
 impl<T, const B: usize> Clone for Iter<'_, T, B> {
     fn clone(&self) -> Self {
         Self {
             leaf: self.leaf,
             index: self.index,
+            remaining: self.remaining,
             phantom: self.phantom,
         }
     }
@@ -515,6 +560,7 @@ where
 pub struct IterMut<'a, T, const B: usize> {
     leaf: Option<LeafRef<T, B, Mutable>>,
     index: usize,
+    remaining: usize,
     phantom: PhantomData<&'a mut T>,
 }
 
@@ -535,9 +581,32 @@ impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
         // life of the iterator.
         Some(unsafe { NonNull::from(leaf.child_mut(index)).as_mut() })
     }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let (leaf, i) = nth(self.leaf.take()?, self.index, n)?;
+        self.index = i + 1;
+        // SAFETY: Extending the lifetime to `'a` is okay because `'a` doesn't
+        // outlive the `BTreeVec` and we won't access this index again for the
+        // life of the iterator.
+        Some(unsafe {
+            NonNull::from(self.leaf.insert(leaf).child_mut(i)).as_mut()
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
 }
 
 impl<T, const B: usize> FusedIterator for IterMut<'_, T, B> {}
+
+impl<T, const B: usize> ExactSizeIterator for IterMut<'_, T, B> {
+    fn len(&self) -> usize {
+        let (lower, upper) = self.size_hint();
+        debug_assert_eq!(Some(lower), upper);
+        lower
+    }
+}
 
 // SAFETY: This type yields mutable references to items in the vector, so it
 // can be `Send` as long as `T` is `Send`. `T` doesn't need to be `Sync`
@@ -565,6 +634,7 @@ pub struct IntoIter<T, const B: usize, A: Allocator = Global> {
     leaf: Option<LeafRef<T, B, Mutable>>,
     length: usize,
     index: usize,
+    remaining: usize,
     _tree: BTreeVec<T, B, A>,
 }
 
@@ -582,12 +652,25 @@ impl<T, const B: usize, A: Allocator> Iterator for IntoIter<T, B, A> {
         }
         let index = self.index;
         self.index += 1;
+        self.remaining -= 1;
         // SAFETY: We haven't taken the item at `index` yet.
         Some(unsafe { leaf.take_raw_child(index).assume_init() })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
     }
 }
 
 impl<T, const B: usize, A: Allocator> FusedIterator for IntoIter<T, B, A> {}
+
+impl<T, const B: usize> ExactSizeIterator for IntoIter<T, B> {
+    fn len(&self) -> usize {
+        let (lower, upper) = self.size_hint();
+        debug_assert_eq!(Some(lower), upper);
+        lower
+    }
+}
 
 // SAFETY: This type owns the items in the vector, so it can be `Send` as long
 // as `T` is `Send`.
@@ -630,6 +713,7 @@ impl<T, const B: usize, A: Allocator> IntoIterator for BTreeVec<T, B, A> {
             index: 0,
             length: leaf.as_ref().map_or(0, |leaf| leaf.length()),
             leaf,
+            remaining: self.len(),
             _tree: self,
         }
     }
