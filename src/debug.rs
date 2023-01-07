@@ -83,7 +83,11 @@ impl<'a, T: Debug, const B: usize> Display for VecDebug<'a, T, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut state = self.state.borrow_mut();
         writeln!(f, "digraph {{")?;
-        writeln!(f, "{I1}R [label={}, shape=rectangle]", self.vec.len())?;
+        writeln!(
+            f,
+            "{I1}R [label=\"Size: {}\" shape=rectangle]",
+            self.vec.len(),
+        )?;
         if let Some(root) = self.vec.root {
             // SAFETY: We create `NodeRef`s only according to standard borrow
             // rules, so no mutable references to data exist.
@@ -114,9 +118,9 @@ fn fmt_internal<T: Debug, const B: usize>(
     let id = state.id(node);
     writeln!(
         f,
-        "{I1}N{id} [label=\"i{id} ({}, {})\" shape=circle]",
-        node.length(),
+        "{I1}N{id} [label=\"i{id}\\n#{}\\nL: {}\" shape=rectangle]",
         node.index(),
+        node.length(),
     )?;
     for i in 0..node.length() {
         let child = node.child_ref(i);
@@ -135,15 +139,15 @@ fn fmt_leaf<T: Debug, const B: usize>(
     let id = state.id(node);
     writeln!(
         f,
-        "{I1}N{id} [label=\"L{id} ({}, {})\" shape=circle]",
-        node.length(),
+        "{I1}N{id} [label=\"L{id}\\n#{}\\nL: {}\" shape=rectangle]",
         node.index(),
+        node.length(),
     )?;
     for i in 0..node.length() {
         writeln!(f, "{I1}N{id} -> N{id}C{i}")?;
         writeln!(
             f,
-            "{I1}N{id}C{i} [label=\"{:?}\", shape=circle]",
+            "{I1}N{id}C{i} [label=\"{:?}\" shape=rectangle]",
             node.child(i),
         )?;
     }

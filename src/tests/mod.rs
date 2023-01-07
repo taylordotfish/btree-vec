@@ -97,6 +97,20 @@ fn same_life_ref() {
     drop(n);
 }
 
+#[test]
+fn iter_skip() {
+    let mut vec = BTreeVec::<u8, 4>::create();
+    for i in 0..32 {
+        vec.push(i);
+    }
+    let mut iter = vec.iter().copied();
+    assert!(iter.by_ref().skip(17).take(5).eq(17..22));
+    assert!(iter.skip(4).take(2).eq(26..28));
+    let mut iter = vec.iter_mut().map(|n| *n);
+    assert!(iter.by_ref().skip(5).take(10).eq(5..15));
+    assert!(iter.skip(1).take(1).eq(16..17));
+}
+
 #[cfg(btree_vec_debug)]
 #[allow(dead_code)]
 fn make_graph<T: core::fmt::Debug, const B: usize>(
