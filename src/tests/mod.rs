@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2023 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
