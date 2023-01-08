@@ -29,7 +29,9 @@ impl<A: Allocator> VerifiedAlloc<A> {
     ///   not be used to deallocate memory that was not allocated by `alloc`.
     ///
     ///   This means that the use of [`VerifiedAlloc`] must be kept to code
-    ///   paths whose deallocation behavior is known and can be trusted.
+    ///   paths whose deallocation behavior is known and can be trusted. The
+    ///   benefit is that these code paths can safely deallocate memory with
+    ///   `alloc` because the preconditions have already been checked.
     ///
     /// * You must ensure that the returned [`VerifiedAlloc`] will not be
     ///   dropped and its memory will not be reused (e.g., via [`mem::forget`])
