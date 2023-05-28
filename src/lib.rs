@@ -26,8 +26,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 //! This crate provides a growable array (vector) implemented using a B-tree
-//! (more specifically, a B+ tree). It provides non-amortized O(log n) random
-//! accesses, insertions, and removals, as well as O(n) iteration. The
+//! (more specifically, a B+ tree). It provides non-amortized O(log *n*) random
+//! accesses, insertions, and removals, as well as O(*n*) iteration. The
 //! branching factor is also customizable.
 //!
 //! The design is similar to [unsorted counted B-trees][cb] as described by
@@ -128,6 +128,11 @@ use verified_alloc::VerifiedAlloc;
 /// `B` is the branching factor. It must be at least 3. The standard library
 /// uses a value of 6 for its B-tree structures. Larger values are better when
 /// `T` is smaller.
+///
+/// # Mathematical variables
+///
+/// For the purposes of specifying the time complexity of various operations,
+/// *n* refers to the number of items in the vector.
 pub struct BTreeVec<T, const B: usize = 12, A: Allocator = Global> {
     root: Option<PrefixPtr<T, B>>,
     size: usize,
@@ -269,16 +274,28 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
     }
 
     /// Gets the length of the vector.
+    ///
+    /// # Time complexity
+    ///
+    /// Constant.
     pub fn len(&self) -> usize {
         self.size
     }
 
     /// Checks whether the vector is empty.
+    ///
+    /// # Time complexity
+    ///
+    /// Constant.
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }
 
     /// Gets the item at `index`, or [`None`] if no such item exists.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn get(&self, index: usize) -> Option<&T> {
         (index < self.size).then(|| {
             // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with
@@ -291,6 +308,10 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
 
     /// Gets a mutable reference to the item at `index`, or [`None`] if no such
     /// item exists.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         (index < self.size).then(|| {
             // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with
@@ -301,23 +322,39 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
     }
 
     /// Gets the first item in the vector, or [`None`] if the vector is empty.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn first(&self) -> Option<&T> {
         self.get(0)
     }
 
     /// Gets a mutable reference to the first item in the vector, or [`None`]
     /// if the vector is empty.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn first_mut(&mut self) -> Option<&mut T> {
         self.get_mut(0)
     }
 
     /// Gets the last item in the vector, or [`None`] if the vector is empty.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn last(&self) -> Option<&T> {
         self.size.checked_sub(1).and_then(|s| self.get(s))
     }
 
     /// Gets a mutable reference to the last item in the vector, or [`None`] if
     /// the vector is empty.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn last_mut(&mut self) -> Option<&mut T> {
         self.size.checked_sub(1).and_then(move |s| self.get_mut(s))
     }
@@ -327,6 +364,10 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
     /// # Panics
     ///
     /// Panics if `index` is greater than [`self.len()`](Self::len).
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn insert(&mut self, index: usize, item: T) {
         assert!(index <= self.size);
         self.root.get_or_insert_with(|| {
@@ -349,6 +390,10 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
     }
 
     /// Inserts `item` at the end of the vector.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn push(&mut self, item: T) {
         self.insert(self.size, item);
     }
@@ -358,6 +403,10 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
     /// # Panics
     ///
     /// Panics if `index` is not less than [`self.len()`](Self::len).
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn remove(&mut self, index: usize) -> T {
         assert!(index < self.size);
         // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with
@@ -371,11 +420,19 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
 
     /// Removes and returns the last item in the vector, or [`None`] if the
     /// vector is empty.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn pop(&mut self) -> Option<T> {
         self.size.checked_sub(1).map(|s| self.remove(s))
     }
 
     /// Gets an iterator that returns references to each item in the vector.
+    ///
+    /// # Time complexity
+    ///
+    /// Iteration over the entire vector is Θ(*n*).
     pub fn iter(&self) -> Iter<'_, T, B> {
         // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with standard
         // borrowing rules, so there are no existing mutable references.
@@ -389,6 +446,10 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
 
     /// Gets an iterator that returns mutable references to each item in the
     /// vector.
+    ///
+    /// # Time complexity
+    ///
+    /// Iteration over the entire vector is Θ(*n*).
     pub fn iter_mut(&mut self) -> IterMut<'_, T, B> {
         // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with standard
         // borrowing rules, so there are no existing references.
