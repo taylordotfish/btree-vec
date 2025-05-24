@@ -17,9 +17,9 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
+use super::BTreeVec;
 use super::node::{InternalRef, LeafRef, NodeRef, PrefixRef};
 use super::node::{Node, PrefixCast};
-use super::BTreeVec;
 use alloc::collections::BTreeMap;
 use core::cell::RefCell;
 use core::fmt::{self, Debug, Display, Formatter};

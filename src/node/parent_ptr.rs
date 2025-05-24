@@ -36,7 +36,7 @@ impl<T, const B: usize> Copy for ParentPtr<T, B> {}
 impl<T, const B: usize> ParentPtr<T, B> {
     fn sentinel() -> NonNull<InternalNode<T, B>> {
         #[repr(align(2))]
-        struct Align2(u16);
+        struct Align2(#[allow(dead_code)] u16);
 
         static SENTINEL: Align2 = Align2(0);
         NonNull::from(&SENTINEL).cast()

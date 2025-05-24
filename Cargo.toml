@@ -1,6 +1,6 @@
 [package]
 name = "btree-vec"
-version = "0.3.2-dev"
+version = "0.3.2"
 edition = "2021"
 rust-version = "1.60"
 description = "A growable array (vector) implemented using a B-tree"
@@ -31,6 +31,14 @@ optional = true
 version = "0.1.7"
 default-features = false
 optional = true
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    "cfg(any_allocator_api)",
+    "cfg(has_allocator_api)",
+    "cfg(btree_vec_debug)",
+]
 
 [package.metadata.docs.rs]
 features = ["allocator_api"]

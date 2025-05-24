@@ -18,7 +18,7 @@
  */
 
 use crate::{Allocator, VerifiedAlloc};
-use alloc::alloc::{handle_alloc_error, Layout};
+use alloc::alloc::{Layout, handle_alloc_error};
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;

@@ -114,7 +114,7 @@ mod remove;
 mod tests;
 mod verified_alloc;
 
-use insert::{insert, ItemInsertion};
+use insert::{ItemInsertion, insert};
 use node::{LeafRef, Mutable, Node, NodeRef};
 use node::{PrefixCast, PrefixPtr, PrefixRef};
 use remove::remove;
