@@ -148,7 +148,7 @@ fn fmt_leaf<T: Debug, const B: usize>(
         writeln!(
             f,
             "{I1}N{id}C{i} [label=\"{:?}\" shape=rectangle]",
-            node.child(i),
+            node.children()[i],
         )?;
     }
     Ok(())

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2023 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2023, 2025 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -104,11 +104,27 @@ fn iter_skip() {
         vec.push(i);
     }
     let mut iter = vec.iter().copied();
+    assert_eq!(iter.size_hint(), (32, Some(32)));
     assert!(iter.by_ref().skip(17).take(5).eq(17..22));
-    assert!(iter.skip(4).take(2).eq(26..28));
+    assert_eq!(iter.size_hint(), (10, Some(10)));
+    assert!(iter.by_ref().skip(4).take(2).eq(26..28));
+    assert_eq!(iter.size_hint(), (4, Some(4)));
     let mut iter = vec.iter_mut().map(|n| *n);
+    assert_eq!(iter.size_hint(), (32, Some(32)));
     assert!(iter.by_ref().skip(5).take(10).eq(5..15));
-    assert!(iter.skip(1).take(1).eq(16..17));
+    assert_eq!(iter.size_hint(), (17, Some(17)));
+    assert!(iter.by_ref().skip(1).take(1).eq(16..17));
+    assert_eq!(iter.size_hint(), (15, Some(15)));
+}
+
+#[test]
+fn clone() {
+    let mut vec = BTreeVec::<u8, 6>::create();
+    for i in 0..64 {
+        vec.push(i);
+    }
+    let clone = vec.clone();
+    assert!(vec.iter().eq(&clone));
 }
 
 #[cfg(btree_vec_debug)]

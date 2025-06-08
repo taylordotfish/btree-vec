@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2023 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2023, 2025 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -105,7 +105,6 @@ use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
 
 #[cfg(btree_vec_debug)]
-#[allow(dead_code)]
 pub mod debug;
 mod insert;
 mod node;
@@ -302,7 +301,7 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
             // standard borrowing rules, so there are no existing mutable
             // references.
             let (leaf, index) = unsafe { self.leaf_for(index) };
-            leaf.into_child(index)
+            &leaf.into_children()[index]
         })
     }
 
@@ -317,7 +316,7 @@ impl<T, const B: usize, A: Allocator> BTreeVec<T, B, A> {
             // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with
             // standard borrowing rules, so there are no existing references.
             let (leaf, index) = unsafe { self.leaf_for_mut(index) };
-            leaf.into_child_mut(index)
+            &mut leaf.into_children_mut()[index]
         })
     }
 
@@ -514,6 +513,29 @@ where
     }
 }
 
+impl<T, const B: usize, A> Clone for BTreeVec<T, B, A>
+where
+    T: Clone,
+    A: Clone + Allocator,
+{
+    fn clone(&self) -> Self {
+        let root = self.root.map(|root| {
+            // SAFETY: `BTreeVec` uses `NodeRef`s in accordance with standard
+            // borrowing rules, so there are no existing references.
+            unsafe { NodeRef::new(root) }
+                .clone_node(None, &self.alloc)
+                .0
+                .as_ptr()
+        });
+        Self {
+            root,
+            size: self.size,
+            alloc: self.alloc.clone(),
+            phantom: self.phantom,
+        }
+    }
+}
+
 fn nth<T, const B: usize, R>(
     leaf: LeafRef<T, B, R>,
     index: usize,
@@ -560,13 +582,16 @@ impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
         }
         let index = self.index;
         self.index += 1;
-        Some(leaf.into_child(index))
+        self.remaining -= 1;
+        Some(&leaf.into_children()[index])
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let remaining = core::mem::replace(&mut self.remaining, 0);
         let (leaf, i) = nth(self.leaf.take()?, self.index, n)?;
         self.index = i + 1;
-        Some(self.leaf.insert(leaf).into_child(i))
+        self.remaining = remaining - n - 1;
+        Some(&self.leaf.insert(leaf).into_children()[i])
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -637,21 +662,24 @@ impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
         }
         let index = self.index;
         self.index += 1;
+        self.remaining -= 1;
+        let item = &mut leaf.children_mut()[index];
         // SAFETY: Extending the lifetime to `'a` is okay because `'a` doesn't
         // outlive the `BTreeVec` and we won't access this index again for the
         // life of the iterator.
-        Some(unsafe { NonNull::from(leaf.child_mut(index)).as_mut() })
+        Some(unsafe { NonNull::from(item).as_mut() })
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let remaining = core::mem::replace(&mut self.remaining, 0);
         let (leaf, i) = nth(self.leaf.take()?, self.index, n)?;
         self.index = i + 1;
+        self.remaining = remaining - n - 1;
+        let item = &mut self.leaf.insert(leaf).children_mut()[i];
         // SAFETY: Extending the lifetime to `'a` is okay because `'a` doesn't
         // outlive the `BTreeVec` and we won't access this index again for the
         // life of the iterator.
-        Some(unsafe {
-            NonNull::from(self.leaf.insert(leaf).child_mut(i)).as_mut()
-        })
+        Some(unsafe { NonNull::from(item).as_mut() })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

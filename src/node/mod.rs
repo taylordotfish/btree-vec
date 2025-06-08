@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022, 2025 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -171,6 +171,7 @@ mod node_ref_alloc {
             .allocate(layout)
             .unwrap_or_else(|_| handle_alloc_error(layout))
             .cast::<N>();
+        // SAFETY: Guaranteed by the requirements of `Allocator`.
         unsafe {
             ptr.as_ptr().write(N::new(Token(())));
         }
@@ -199,6 +200,30 @@ impl<T, const B: usize, R> NodeRef<Prefix<T, B>, R> {
             NodeKind::Leaf => PrefixCast::Leaf(NodeRef(self.0.cast(), Pd)),
             NodeKind::Internal => {
                 PrefixCast::Internal(NodeRef(self.0.cast(), Pd))
+            }
+        }
+    }
+}
+
+impl<T: Clone, const B: usize> NodeRef<Prefix<T, B>> {
+    /// Returns the new node and the first leaf of the subtree rooted at the
+    /// node.
+    pub fn clone_node(
+        &self,
+        next_leaf: Option<NonNull<LeafNode<T, B>>>,
+        alloc: &VerifiedAlloc<impl Allocator>,
+    ) -> (NodeRef<Prefix<T, B>, Mutable>, NonNull<LeafNode<T, B>>) {
+        match self.cast() {
+            PrefixCast::Internal(node) => {
+                let mut new = InternalRef::alloc(alloc);
+                let leaf = new.clone_from(node, next_leaf, alloc);
+                (new.into_prefix(), leaf)
+            }
+            PrefixCast::Leaf(node) => {
+                let mut new = LeafRef::alloc(alloc);
+                new.clone_from(&node, next_leaf);
+                let leaf = node.as_ptr();
+                (new.into_prefix(), leaf)
             }
         }
     }

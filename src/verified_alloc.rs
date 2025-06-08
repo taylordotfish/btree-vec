@@ -20,6 +20,7 @@
 use crate::Allocator;
 use core::ops::Deref;
 
+#[derive(Clone)]
 pub struct VerifiedAlloc<A>(A);
 
 impl<A: Allocator> VerifiedAlloc<A> {

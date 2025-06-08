@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022, 2025 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -18,10 +18,11 @@
  */
 
 use super::{InternalRef, Mutable, NodeRef, PrefixRef};
-use super::{Node, NodeKind, Prefix, PrefixPtr, SplitStrategy};
+use super::{LeafNode, Node, NodeKind, Prefix, PrefixPtr, SplitStrategy};
 use crate::{Allocator, VerifiedAlloc};
 use core::marker::PhantomData as Pd;
 use core::mem;
+use core::ptr::NonNull;
 
 #[repr(C, align(2))]
 pub struct InternalNode<T, const B: usize> {
@@ -230,8 +231,28 @@ impl<T, const B: usize, R> NodeRef<InternalNode<T, B>, R> {
 }
 
 impl<T, const B: usize> NodeRef<InternalNode<T, B>> {
-    #[allow(dead_code)]
     pub fn child_ref(&self, i: usize) -> PrefixRef<T, B> {
         NodeRef(self.child_ptr(i).unwrap(), Pd)
+    }
+}
+
+impl<T: Clone, const B: usize> NodeRef<InternalNode<T, B>, Mutable> {
+    pub fn clone_from(
+        &mut self,
+        other: InternalRef<T, B>,
+        mut next_leaf: Option<NonNull<LeafNode<T, B>>>,
+        alloc: &VerifiedAlloc<impl Allocator>,
+    ) -> NonNull<LeafNode<T, B>> {
+        let self_ptr = self.as_ptr();
+        for (i, c) in (0..other.length).zip(&mut self.children).rev() {
+            let (mut node, leaf) =
+                other.child_ref(i).clone_node(next_leaf, alloc);
+            next_leaf = Some(leaf);
+            node.parent.set(Some(self_ptr));
+            *c = Some(node.as_ptr());
+        }
+        self.length = other.length;
+        self.sizes = other.sizes;
+        next_leaf.expect("internal nodes should have at least one child")
     }
 }

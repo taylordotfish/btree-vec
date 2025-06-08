@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2022 taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2021-2022, 2025 taylor.fish <contact@taylor.fish>
  *
  * This file is part of btree-vec.
  *
@@ -51,6 +51,20 @@ impl<T, const B: usize> LeafNode<T, B> {
             children: [(); B].map(|_| MaybeUninit::uninit()),
             next: None,
         }
+    }
+
+    pub fn clone_from(
+        &mut self,
+        other: &Self,
+        next_leaf: Option<NonNull<Self>>,
+    ) where
+        T: Clone,
+    {
+        for (md, item) in self.children.iter_mut().zip(other.children()) {
+            md.write(item.clone());
+        }
+        self.length = other.length;
+        self.next = next_leaf;
     }
 
     pub fn split(
@@ -117,20 +131,22 @@ impl<T, const B: usize> LeafNode<T, B> {
         unsafe { item.assume_init() }
     }
 
-    pub fn child(&self, i: usize) -> &T {
-        assert!(i < self.length);
-        // SAFETY: Items at 0..length are always initialized. We can
-        // dereference because we hand out references only according to
-        // standard borrowing rules.
-        unsafe { &*self.children[i].as_ptr() }
+    pub fn children(&self) -> &[T] {
+        let ptr = &self.children[..self.length] as *const _ as *const [T];
+        // SAFETY: Items at 0..length are always initialized, and
+        // `MaybeUninit<T>` has the same layout as `T`. We can dereference
+        // because we hand out references only according to standard borrowing
+        // rules.
+        unsafe { &*ptr }
     }
 
-    pub fn child_mut(&mut self, i: usize) -> &mut T {
-        assert!(i < self.length);
-        // SAFETY: Items at 0..length are always initialized. We can
-        // dereference because we hand out references only according to
-        // standard borrowing rules.
-        unsafe { &mut *self.children[i].as_mut_ptr() }
+    pub fn children_mut(&mut self) -> &mut [T] {
+        let ptr = &mut self.children[..self.length] as *mut _ as *mut [T];
+        // SAFETY: Items at 0..length are always initialized, and
+        // `MaybeUninit<T>` has the same layout as `T`. We can dereference
+        // because we hand out references only according to standard borrowing
+        // rules.
+        unsafe { &mut *ptr }
     }
 
     pub fn set_zero_length(&mut self) {
@@ -201,7 +217,7 @@ impl<T, const B: usize> Node for LeafNode<T, B> {
 }
 
 impl<T, const B: usize, R> NodeRef<LeafNode<T, B>, R> {
-    pub fn into_child<'a>(self, i: usize) -> &'a T {
+    pub fn into_children<'a>(self) -> &'a [T] {
         // SAFETY: The underlying node's life is not tied to this `NodeRef`'s
         // life, so we can return a reference to data in the node with any
         // lifetime. In order for the underlying node to be dropped, a mutable
@@ -209,7 +225,7 @@ impl<T, const B: usize, R> NodeRef<LeafNode<T, B>, R> {
         // because `self` is an immutable `NodeRef`), which is an unsafe
         // operation that requires the caller to ensure that no references to
         // node data (such as those returned by this method) exist.
-        unsafe { &*(self.child(i) as *const _) }
+        unsafe { &*(self.children() as *const _) }
     }
 
     pub fn into_next(self) -> Result<Self, Self> {
@@ -222,7 +238,7 @@ impl<T, const B: usize, R> NodeRef<LeafNode<T, B>, R> {
 }
 
 impl<T, const B: usize> NodeRef<LeafNode<T, B>, Mutable> {
-    pub fn into_child_mut<'a>(mut self, i: usize) -> &'a mut T {
+    pub fn into_children_mut<'a>(mut self) -> &'a mut [T] {
         // SAFETY: The underlying node's life is not tied to this `NodeRef`'s
         // life, so we can return a reference to data in the node with any
         // lifetime. In order for the underlying node to be dropped, a mutable
@@ -231,6 +247,6 @@ impl<T, const B: usize> NodeRef<LeafNode<T, B>, Mutable> {
         // is an unsafe operation that requires the caller to ensure that no
         // references to node data (such as those returned by this method)
         // exist.
-        unsafe { &mut *(self.child_mut(i) as *mut _) }
+        unsafe { &mut *(self.children_mut() as *mut _) }
     }
 }
