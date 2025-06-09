@@ -573,6 +573,10 @@ pub struct Iter<'a, T, const B: usize> {
 impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
     type Item = &'a T;
 
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*), but iteration over the entire vector by
+    /// repeatedly calling this method is only Θ(*n*).
     fn next(&mut self) -> Option<Self::Item> {
         let mut leaf = self.leaf?;
         if self.index == leaf.length() {
@@ -586,6 +590,9 @@ impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
         Some(&leaf.into_children()[index])
     }
 
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let remaining = core::mem::replace(&mut self.remaining, 0);
         let (leaf, i) = nth(self.leaf.take()?, self.index, n)?;
@@ -653,6 +660,10 @@ pub struct IterMut<'a, T, const B: usize> {
 impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
     type Item = &'a mut T;
 
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*), but iteration over the entire vector by
+    /// repeatedly calling this method is only Θ(*n*).
     fn next(&mut self) -> Option<Self::Item> {
         let mut leaf = self.leaf.as_mut()?;
         if self.index == leaf.length() {
@@ -670,6 +681,9 @@ impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
         Some(unsafe { NonNull::from(item).as_mut() })
     }
 
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let remaining = core::mem::replace(&mut self.remaining, 0);
         let (leaf, i) = nth(self.leaf.take()?, self.index, n)?;
@@ -730,6 +744,10 @@ pub struct IntoIter<T, const B: usize, A: Allocator = Global> {
 impl<T, const B: usize, A: Allocator> Iterator for IntoIter<T, B, A> {
     type Item = T;
 
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*), but iteration over the entire vector by
+    /// repeatedly calling this method is only Θ(*n*).
     fn next(&mut self) -> Option<Self::Item> {
         let mut leaf = self.leaf.as_mut()?;
         if self.index == self.length {
