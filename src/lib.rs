@@ -17,7 +17,7 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#![cfg_attr(not(all(test, btree_vec_debug)), no_std)]
+#![no_std]
 #![cfg_attr(
     any(feature = "allocator_api", has_allocator_api),
     feature(allocator_api)
@@ -109,8 +109,6 @@ pub mod debug;
 mod insert;
 mod node;
 mod remove;
-#[cfg(test)]
-mod tests;
 mod verified_alloc;
 
 use insert::{ItemInsertion, insert};

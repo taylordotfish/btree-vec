@@ -17,13 +17,9 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::BTreeVec;
+use btree_vec::BTreeVec;
 #[cfg(btree_vec_debug)]
-use crate::debug;
-use alloc::boxed::Box;
-
-mod insert;
-mod remove;
+use btree_vec::debug;
 
 #[test]
 fn basic_iter() {
@@ -129,7 +125,7 @@ fn clone() {
 
 #[cfg(btree_vec_debug)]
 #[allow(dead_code)]
-fn make_graph<T: core::fmt::Debug, const B: usize>(
+fn make_graph<T: std::fmt::Debug, const B: usize>(
     vec: &BTreeVec<T, B>,
     state: &mut debug::State,
 ) -> std::io::Result<()> {

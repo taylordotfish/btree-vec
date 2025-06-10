@@ -17,8 +17,7 @@
  * along with btree-vec. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::BTreeVec;
-use alloc::vec::Vec;
+use btree_vec::BTreeVec;
 
 #[test]
 fn basic_push() {
