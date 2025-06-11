@@ -98,6 +98,7 @@ mod allocator;
 
 use alloc::boxed::Box;
 use allocator::{Allocator, Global};
+use core::cmp::Ordering;
 use core::fmt::{self, Debug, Formatter};
 use core::iter::{ExactSizeIterator, FusedIterator};
 use core::marker::PhantomData;
@@ -531,6 +532,42 @@ where
             alloc: self.alloc.clone(),
             phantom: self.phantom,
         }
+    }
+}
+
+impl<T, const B: usize, A1, A2> PartialEq<BTreeVec<T, B, A2>>
+    for BTreeVec<T, B, A1>
+where
+    T: PartialEq,
+    A1: Allocator,
+    A2: Allocator,
+{
+    fn eq(&self, other: &BTreeVec<T, B, A2>) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl<T: Eq, const B: usize, A: Allocator> Eq for BTreeVec<T, B, A> {}
+
+impl<T, const B: usize, A1, A2> PartialOrd<BTreeVec<T, B, A2>>
+    for BTreeVec<T, B, A1>
+where
+    T: PartialOrd,
+    A1: Allocator,
+    A2: Allocator,
+{
+    fn partial_cmp(&self, other: &BTreeVec<T, B, A2>) -> Option<Ordering> {
+        self.iter().partial_cmp(other.iter())
+    }
+}
+
+impl<T, const B: usize, A> Ord for BTreeVec<T, B, A>
+where
+    T: Ord,
+    A: Allocator,
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.iter().cmp(other.iter())
     }
 }
 

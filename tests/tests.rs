@@ -121,6 +121,7 @@ fn clone() {
     }
     let clone = vec.clone();
     assert!(vec.iter().eq(&clone));
+    assert_eq!(vec, clone);
 }
 
 #[cfg(btree_vec_debug)]
