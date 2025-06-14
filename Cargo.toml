@@ -1,6 +1,6 @@
 [package]
 name = "btree-vec"
-version = "0.3.4"
+version = "0.3.5-dev"
 edition = "2021"
 rust-version = "1.60"
 description = "A growable array (vector) implemented using a B-tree"

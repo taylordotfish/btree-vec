@@ -627,7 +627,7 @@ impl<'a, T, const B: usize> Iterator for Iter<'a, T, B> {
 
     /// # Time complexity
     ///
-    /// Worst-case Θ(log *n*).
+    /// Worst-case Θ(log *n*), where *n* is the number of items in the vector.
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let remaining = core::mem::replace(&mut self.remaining, 0);
         let (leaf, i) = nth(self.leaf.take()?, self.index, n)?;
@@ -718,7 +718,7 @@ impl<'a, T, const B: usize> Iterator for IterMut<'a, T, B> {
 
     /// # Time complexity
     ///
-    /// Worst-case Θ(log *n*).
+    /// Worst-case Θ(log *n*), where *n* is the number of items in the vector.
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let remaining = core::mem::replace(&mut self.remaining, 0);
         let (leaf, i) = nth(self.leaf.take()?, self.index, n)?;
