@@ -70,6 +70,14 @@ License
 btree-vec is licensed under version 3 of the GNU General Public License,
 or (at your option) any later version. See [LICENSE](LICENSE).
 
+Please note that this does not mean you have to license your project under
+the GPL if you use btree-vec. Your project can be licensed under any
+GPLv3-compatible license, including nearly all permissive licenses such as MIT
+or Apache 2.0. The terms of the GPL will apply only to the combination of your
+project with btree-vec (e.g., source code must be provided along with any
+compiled binaries); any portion of your project that does not depend on
+btree-vec may be used without adherence to the GPL.
+
 Contributing
 ------------
 
